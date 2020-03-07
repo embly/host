@@ -1,0 +1,18 @@
+version: "3.5"
+
+services:
+  consul:
+    image: nixery.dev/shell/consul
+    command: consul agent -dev -client 0.0.0.0
+    ports:
+      - "8500:8500"
+  nomad:
+    image: nixery.dev/shell/nomad
+    command: bash -c "mkdir /tmp && nomad agent -dev -config=/opt/nomad.hcl "
+    volumes:
+      - ./nomad.hcl:/opt/nomad.hcl
+    depends_on:
+      - consul
+    ports:
+      - "4647:4647"
+      - "4646:4646"
