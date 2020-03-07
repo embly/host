@@ -7,12 +7,18 @@ services:
     ports:
       - "8500:8500"
   nomad:
-    image: nixery.dev/shell/nomad
-    command: bash -c "mkdir /tmp && nomad agent -dev -config=/opt/nomad.hcl "
+    cap_add:
+      - SYS_ADMIN
+    build:
+      dockerfile: nomad.Dockerfile
+      context: .
     volumes:
-      - ./nomad.hcl:/opt/nomad.hcl
+      - ./:/app
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/nomad/data:/tmp/nomad/data
     depends_on:
       - consul
     ports:
       - "4647:4647"
+      - "4648:4648"
       - "4646:4646"
