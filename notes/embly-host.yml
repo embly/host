@@ -1,0 +1,3 @@
+tasks:
+  - name: voltapp
+    image: voltus/voltapp
