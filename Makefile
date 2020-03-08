@@ -1,8 +1,8 @@
 
 
 
-
 down:
+	docker-compose kill
 	docker-compose down
 
 build:
