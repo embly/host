@@ -89,13 +89,9 @@ flask = service(
     "STATS_HOST": metrics.address},
 )
 ```
-=======
+
+
 You can deploy a service or a cron job (serverless stuff comes later). This is all configured in the
 configuration file.
 
 There is a load balancer sitting on every node. The load balancer
-
----
-
- -
->>>>>>> Stashed changes

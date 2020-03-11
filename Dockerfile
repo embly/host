@@ -1,1 +1,0 @@
-FROM flyio/hellofly:first

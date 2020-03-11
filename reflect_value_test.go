@@ -1,15 +1,21 @@
-package main
+package host
 
 import (
-	"fmt"
 	"testing"
+
+	"github.com/maxmcd/tester"
 )
 
-func TestReflectValue(t *testing.T) {
-	service := Service{}
+type TestType struct {
+	Foo string
+	Bar string
+}
 
-	rv := ReflectValue{val: &service}
+func TestReflectValue(te *testing.T) {
+	t := tester.New(te)
 
-	fmt.Println(rv.AttrNames())
-	fmt.Println(rv.Type())
+	rv := ReflectValue{val: &TestType{}}
+
+	t.Assert().Equal(rv.AttrNames(), []string{"foo", "bar"})
+	t.Assert().Equal("test_type", rv.Type())
 }
