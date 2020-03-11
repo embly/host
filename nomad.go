@@ -1,65 +1,66 @@
 package host
 
-import (
-	"fmt"
+// import (
+// 	"fmt"
 
-	nomad "github.com/hashicorp/nomad/api"
-	"github.com/hashicorp/nomad/helper"
-)
+// 	nomad "github.com/hashicorp/nomad/api"
+// 	"github.com/hashicorp/nomad/helper"
+// )
 
-func startService(service *Service) {
-	client, err := nomad.NewClient(&nomad.Config{
-		Address: "http://localhost:4646",
-		Region:  "dc1-1",
-	})
-	panicOnErr(err)
+// func startService(service *Service) {
 
-	jobs := client.Jobs()
-	task := nomad.NewTask(service.Name, "docker")
-	task.Resources = &nomad.Resources{
-		CPU:      helper.IntToPtr(service.CPU),
-		MemoryMB: helper.IntToPtr(service.Memory),
-		Networks: []*nomad.NetworkResource{
-			{
-				MBits: helper.IntToPtr(50),
-				// TODO
-				DynamicPorts: []nomad.Port{{Label: "http"}},
-			},
-		},
-	}
-	task.SetConfig("image", service.Image)
+// 	client, err := nomad.NewClient(&nomad.Config{
+// 		Address: "http://localhost:4646",
+// 		Region:  "dc1-1",
+// 	})
+// 	panicOnErr(err)
 
-	// TODO
-	task.SetConfig("port_map", []map[string]int{{
-		"http": 8000,
-	}})
+// 	jobs := client.Jobs()
+// 	task := nomad.NewTask(service.Name, "docker")
+// 	task.Resources = &nomad.Resources{
+// 		CPU:      helper.IntToPtr(service.CPU),
+// 		MemoryMB: helper.IntToPtr(service.Memory),
+// 		Networks: []*nomad.NetworkResource{
+// 			{
+// 				MBits: helper.IntToPtr(50),
+// 				// TODO
+// 				DynamicPorts: []nomad.Port{{Label: "http"}},
+// 			},
+// 		},
+// 	}
+// 	task.SetConfig("image", service.Image)
 
-	taskGroup := nomad.NewTaskGroup(service.Image, 1)
-	taskGroup.AddTask(task)
+// 	// TODO
+// 	task.SetConfig("port_map", []map[string]int{{
+// 		"http": 8000,
+// 	}})
 
-	job := nomad.NewServiceJob(service.Image, service.Image, "dc1", 1)
-	job.AddDatacenter("dc1")
-	job.AddTaskGroup(taskGroup)
+// 	taskGroup := nomad.NewTaskGroup(service.Image, 1)
+// 	taskGroup.AddTask(task)
 
-	regResp, _, err := jobs.Register(job, nil)
-	panicOnErr(err)
+// 	job := nomad.NewServiceJob(service.Image, service.Image, "dc1", 1)
+// 	job.AddDatacenter("dc1")
+// 	job.AddTaskGroup(taskGroup)
 
-	fmt.Println(regResp.EvalID)
-	eval, _, err := client.Evaluations().Info(regResp.EvalID, nil)
-	panicOnErr(err)
+// 	regResp, _, err := jobs.Register(job, nil)
+// 	panicOnErr(err)
 
-	fmt.Println(eval.DeploymentID)
+// 	fmt.Println(regResp.EvalID)
+// 	eval, _, err := client.Evaluations().Info(regResp.EvalID, nil)
+// 	panicOnErr(err)
 
-	allocs, _, err := client.Deployments().Allocations(eval.DeploymentID, nil)
-	panicOnErr(err)
-	for _, alloc := range allocs {
-		for task, state := range alloc.TaskStates {
-			fmt.Print(task)
-			for _, event := range state.Events {
-				fmt.Print(event.Details)
-			}
-			fmt.Println()
-		}
-	}
+// 	fmt.Println(eval.DeploymentID)
 
-}
+// 	allocs, _, err := client.Deployments().Allocations(eval.DeploymentID, nil)
+// 	panicOnErr(err)
+// 	for _, alloc := range allocs {
+// 		for task, state := range alloc.TaskStates {
+// 			fmt.Print(task)
+// 			for _, event := range state.Events {
+// 				fmt.Print(event.Details)
+// 			}
+// 			fmt.Println()
+// 		}
+// 	}
+
+// }

@@ -22,7 +22,7 @@ type ReflectValue struct {
 }
 
 func (rv ReflectValue) String() string {
-	// formatted like service("name", foo="bar", ...)
+	// TODO: formatted like service("name", foo="bar", ...)
 	return ""
 }
 func (rv ReflectValue) Type() string {

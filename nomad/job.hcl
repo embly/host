@@ -16,10 +16,14 @@ job "scheduler" {
       driver = "docker"
 
       config {
-        image = "crccheck/hello-world"
+        image = "maxmcd/hello:latest"
         port_map {
-          http = 8000
+          http = 8080
         }
+        network_mode = "pricing_db_app_default"
+        network_aliases = [
+          "scheduler"
+        ]
       }
 
 
@@ -39,5 +43,37 @@ job "scheduler" {
         }
       }
     }
+    task "scheduler2" {
+      driver = "docker"
+
+      config {
+        image = "maxmcd/hello:latest"
+        port_map {
+          http = 8080
+        }
+        network_mode = "pricing_db_app_default"
+        network_aliases = [
+          "scheduler2"
+        ]
+      }
+
+
+      service {
+        name = "scheduler2"
+        port = "http"
+      }
+
+      resources {
+        cpu    = 500
+        memory = 256
+
+        network {
+          mbits = 1
+
+          port "http" {}
+        }
+      }
+    }
+
   }
 }

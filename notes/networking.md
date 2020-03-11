@@ -15,6 +15,7 @@ flask = service(
             cpu=500,
             memory=256,
             command="bash",
+            connect_to=["apple.orange:8080"],
         ),
         container("redis", image="redis", ports=[8080]),
     ],
@@ -37,3 +38,11 @@ make sure to lock down firewall rules for access to other containers.
 
 could populate extra_hosts in dev, just to get things working, hmm, but
 we still need the port mapping stuff to work, so likely still need iptables
+
+## Deploy
+
+A deploy could look like:
+
+ - add hostnames to consul
+ - open up ports for services on the proxy
+ -

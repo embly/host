@@ -15,6 +15,7 @@ require (
 	github.com/maxmcd/tester v0.0.0-20200311014518-5d0c4ec0604a
 	github.com/mitchellh/copystructure v1.0.0 // indirect
 	github.com/mitchellh/hashstructure v1.0.0 // indirect
+	github.com/pkg/errors v0.9.1
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/ugorji/go v1.1.7 // indirect
 	go.starlark.net v0.0.0-20200306205701-8dd3e2ee1dd5
