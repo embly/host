@@ -29,3 +29,6 @@ build_hello:
 generate_api_ast:
 	cd python && docker build -t embly-host-ast .
 	docker run -it embly-host-ast
+
+run_run:
+	cd cmd/run && go run . ../../nomad/counter.cfg

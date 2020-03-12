@@ -1,66 +1,85 @@
 package host
 
-// import (
-// 	"fmt"
+import (
+	"fmt"
 
-// 	nomad "github.com/hashicorp/nomad/api"
-// 	"github.com/hashicorp/nomad/helper"
-// )
+	nomad "github.com/hashicorp/nomad/api"
+	"github.com/hashicorp/nomad/helper"
+	"github.com/pkg/errors"
+)
 
-// func startService(service *Service) {
+func DeployIsh(job *nomad.Job) (err error) {
+	client, err := nomad.NewClient(&nomad.Config{
+		Address: "http://localhost:4646",
+		Region:  "dc1-1",
+	})
+	if err != nil {
+		return
+	}
+	jobs := client.Jobs()
 
-// 	client, err := nomad.NewClient(&nomad.Config{
-// 		Address: "http://localhost:4646",
-// 		Region:  "dc1-1",
-// 	})
-// 	panicOnErr(err)
+	regResp, _, err := jobs.Register(job, nil)
+	if err != nil {
+		return
+	}
 
-// 	jobs := client.Jobs()
-// 	task := nomad.NewTask(service.Name, "docker")
-// 	task.Resources = &nomad.Resources{
-// 		CPU:      helper.IntToPtr(service.CPU),
-// 		MemoryMB: helper.IntToPtr(service.Memory),
-// 		Networks: []*nomad.NetworkResource{
-// 			{
-// 				MBits: helper.IntToPtr(50),
-// 				// TODO
-// 				DynamicPorts: []nomad.Port{{Label: "http"}},
-// 			},
-// 		},
-// 	}
-// 	task.SetConfig("image", service.Image)
+	fmt.Println(regResp.EvalID)
+	eval, _, err := client.Evaluations().Info(regResp.EvalID, nil)
+	if err != nil {
+		return errors.WithStack(err)
+	}
 
-// 	// TODO
-// 	task.SetConfig("port_map", []map[string]int{{
-// 		"http": 8000,
-// 	}})
+	fmt.Println(eval.DeploymentID)
 
-// 	taskGroup := nomad.NewTaskGroup(service.Image, 1)
-// 	taskGroup.AddTask(task)
+	allocs, _, err := client.Deployments().Allocations(eval.DeploymentID, nil)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	for _, alloc := range allocs {
+		for task, state := range alloc.TaskStates {
+			fmt.Print(task)
+			for _, event := range state.Events {
+				fmt.Print(event.Details)
+			}
+			fmt.Println()
+		}
+	}
+	return nil
+}
 
-// 	job := nomad.NewServiceJob(service.Image, service.Image, "dc1", 1)
-// 	job.AddDatacenter("dc1")
-// 	job.AddTaskGroup(taskGroup)
+func ServiceToJob(service Service) (job *nomad.Job) {
+	job = nomad.NewServiceJob(service.Name, service.Name, "dc1", 1)
+	job.AddDatacenter("dc1")
 
-// 	regResp, _, err := jobs.Register(job, nil)
-// 	panicOnErr(err)
+	taskGroup := nomad.NewTaskGroup(service.Name, 1)
 
-// 	fmt.Println(regResp.EvalID)
-// 	eval, _, err := client.Evaluations().Info(regResp.EvalID, nil)
-// 	panicOnErr(err)
+	driver := "docker"
+	for _, container := range service.Containers {
+		task := nomad.NewTask(container.Name, driver)
 
-// 	fmt.Println(eval.DeploymentID)
+		dynamicPorts := []nomad.Port{}
+		portMap := map[string]int{}
+		for _, port := range container.ports {
+			dynamicPorts = append(dynamicPorts, nomad.Port{
+				Label: fmt.Sprint(port.number),
+			})
+			portMap[fmt.Sprint(port.number)] = port.number
+		}
+		task.Resources = &nomad.Resources{
+			CPU:      helper.IntToPtr(container.CPU),
+			MemoryMB: helper.IntToPtr(container.Memory),
+			Networks: []*nomad.NetworkResource{
+				{
+					MBits:        helper.IntToPtr(20),
+					DynamicPorts: dynamicPorts,
+				},
+			},
+		}
+		task.SetConfig("image", container.Image)
+		task.SetConfig("port_map", []map[string]int{portMap})
+		taskGroup.AddTask(task)
+	}
+	job.AddTaskGroup(taskGroup)
 
-// 	allocs, _, err := client.Deployments().Allocations(eval.DeploymentID, nil)
-// 	panicOnErr(err)
-// 	for _, alloc := range allocs {
-// 		for task, state := range alloc.TaskStates {
-// 			fmt.Print(task)
-// 			for _, event := range state.Events {
-// 				fmt.Print(event.Details)
-// 			}
-// 			fmt.Println()
-// 		}
-// 	}
-
-// }
+	return
+}

@@ -164,6 +164,10 @@ func (p *File) Container(thread *starlark.Thread, fn *starlark.Builtin,
 		case "cpu":
 			i, _ := kwarg.Index(1).(starlark.Int).Int64()
 			container.CPU = int(i)
+		case "connect_to":
+			// TODO
+		case "environment":
+			// TODO
 		case "ports":
 			container.Ports, container.ports, err = listOfPortsToInt(kwarg.Index(1))
 			if err != nil {
@@ -195,6 +199,9 @@ func (p *File) Service(thread *starlark.Thread, fn *starlark.Builtin,
 	name := string(args.Index(0).(starlark.String))
 	service := Service{Containers: map[string]Container{}}
 	service.Name = name
+
+	// TODO: validate args and extra args
+	// TODO: allow args as ordered kwargs
 	for _, kwarg := range kwargs {
 		key := string(kwarg.Index(0).(starlark.String))
 		value := kwarg.Index(1)
