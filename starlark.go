@@ -1,7 +1,9 @@
 package host
 
 import (
-	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/pkg/errors"
 	"go.starlark.net/resolve"
@@ -70,10 +72,35 @@ type Service struct {
 	Containers map[string]Container
 }
 
-func listOfPortsToInt(val starlark.Value) (out []string, err error) {
+func validatePort(in string) (port Port, err error) {
+	if !regexp.MustCompile(`^\d+(\/udp|\/tcp)?$`).MatchString(in) {
+		err = errors.Errorf(`ports must be formatted like "8080" or "8080/tcp" or "80/udp", but we got '%s'`, in)
+		return
+	}
+	portNum := strings.Trim(in, `udtcp/`)
+	i, err := strconv.Atoi(portNum)
+	if err != nil {
+		err = errors.Wrap(err, "error parsing port "+in)
+		return
+	}
+	if i > 65535 {
+		err = errors.New("port number is too high: " + in)
+		return
+	}
+	if i == 0 {
+		err = errors.New("port number can't be zero")
+		return
+	}
+	if strings.Contains(in, "udp") {
+		port.isUDP = true
+	}
+	port.number = i
+	return
+}
+func listOfPortsToInt(val starlark.Value) (out []string, ports []Port, err error) {
 	list, ok := val.(*starlark.List)
 	if !ok {
-		err = errors.Errorf("expected a list, but got: %s", val.Type())
+		err = errors.Errorf("expected a list of ports, but got: %s", val.Type())
 		return
 	}
 	l := list.Len()
@@ -88,6 +115,14 @@ func listOfPortsToInt(val starlark.Value) (out []string, err error) {
 			err = errors.Errorf("ports can be int or string, but got type: %s", item.Type())
 			return
 		}
+	}
+	for _, p := range out {
+		var port Port
+		port, err = validatePort(p)
+		if err != nil {
+			return
+		}
+		ports = append(ports, port)
 	}
 	return
 }
@@ -130,7 +165,7 @@ func (p *File) Container(thread *starlark.Thread, fn *starlark.Builtin,
 			i, _ := kwarg.Index(1).(starlark.Int).Int64()
 			container.CPU = int(i)
 		case "ports":
-			container.Ports, err = listOfPortsToInt(kwarg.Index(1))
+			container.Ports, container.ports, err = listOfPortsToInt(kwarg.Index(1))
 			if err != nil {
 				return
 			}
@@ -141,6 +176,11 @@ func (p *File) Container(thread *starlark.Thread, fn *starlark.Builtin,
 			err = errors.Errorf(`container() got an unexpected keyword argument '%s'"`, key)
 			return
 		}
+	}
+
+	if container.Image == "" {
+		err = errors.New("container must have an image")
+		return
 	}
 
 	// for later lookups
@@ -263,7 +303,11 @@ func RunFile(filename string) (file *File, err error) {
 		"container":     starlark.NewBuiltin("container", file.Container),
 	})
 	if er, ok := err.(*starlark.EvalError); ok {
-		fmt.Println(er.Backtrace())
+		// fmt.Println(er.Backtrace())
+		_ = er
+	}
+	if err != nil {
+		return
 	}
 	err = file.Validate()
 	return

@@ -12,7 +12,7 @@ require (
 	github.com/hashicorp/nomad v0.10.4
 	github.com/hashicorp/nomad/api v0.0.0-20200310211547-64c40af018e0
 	github.com/hashicorp/raft v1.1.2 // indirect
-	github.com/maxmcd/tester v0.0.0-20200311014518-5d0c4ec0604a
+	github.com/maxmcd/tester v0.0.0-20200311235851-1b0d88c9ef03
 	github.com/mitchellh/copystructure v1.0.0 // indirect
 	github.com/mitchellh/hashstructure v1.0.0 // indirect
 	github.com/pkg/errors v0.9.1

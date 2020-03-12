@@ -2,6 +2,7 @@ package host
 
 import (
 	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/maxmcd/tester"
@@ -39,6 +40,7 @@ load_balancer("all", routes={
 })
 
 `)
+	defer os.Remove(input)
 	file, err := RunFile(input)
 	t.PanicOnErr(err)
 
@@ -53,4 +55,30 @@ load_balancer("all", routes={
 	t.Assert().Equal(file.Services["counter"].Containers["counter"], file.Containers[0])
 
 	t.Assert().Equal(file.LoadBalancers["all"].Routes, map[string]string{"localhost:8080": "counter.counter:9002"})
+}
+
+func TestErrorCases(te *testing.T) {
+	t := tester.New(te)
+	for source, errorContains := range map[string]string{
+		`container("c", image="")`:                      "must have an image",
+		`container("c", ports=["f9002"], image="asdf")`: "ports must be formatted",
+		`container("c", ports=[12.0], image="asdf")`:    "got type: float",
+		`container("c", ports=["0"], image="asdf")`:     "can't be zero",
+		`container("c", ports=["70000"], image="asdf")`: "too high",
+		`container("c", ports="", image="asdf")`:        "list of ports",
+		`container("c", foo="bar", image="asdf")`:       "unexpected keyword argument",
+		`load_balancer("all", routes=5)`:                "parameter 'routes'",
+		`load_balancer("all", routes={1:2})`:            "dictionary of strings",
+		`load_balancer("all", routes={"1":2})`:          "dictionary of strings",
+		`load_balancer("all", foo="bar")`:               "unexpected keyword argument",
+		`service("hi", containers=4)`:                   `unexpected type 'int'`,
+		`service("hi", containers=[4])`:                 `got a value '[4]'`,
+		`service("all", foo="bar")`:                     "unexpected keyword argument",
+		`service("all");service("all")`:                 "names must be unique",
+	} {
+		input := tmpFileFromString(source)
+		defer os.Remove(input)
+		_, err := RunFile(input)
+		t.ErrorContains(err, errorContains, input)
+	}
 }
