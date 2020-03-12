@@ -44,12 +44,15 @@ standalone = service(
             memory=256,
             ports=[9002],
             environment={"COUNTING_SERVICE_URL": "counter:9002"},
-        )
+        ),
     ],
 )
 
 
-load_balancer("all", {
-    "localhost:8080": "dashboard.dashboard:9002",
-    "localhost:8081": "dashboard.standalone:9002",
-})
+load_balancer(
+    "all",
+    {
+        "localhost:8080": "dashboard.dashboard:9002",
+        "localhost:8081": "dashboard.standalone:9002",
+    },
+)
