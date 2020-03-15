@@ -1,14 +1,32 @@
 package proxy
 
 import (
+	"log"
+	"net"
+	"os/user"
+	"runtime"
 	"testing"
 
+	"github.com/embly/host/pkg/docktest"
+	"github.com/embly/host/pkg/exec"
 	"github.com/maxmcd/tester"
 )
 
+func shouldWeTestLocalIPTables(t tester.Tester) {
+	if runtime.GOOS != "linux" {
+		t.Skip("don't test iptables on", runtime.GOOS)
+	}
+	user, err := user.Current()
+	t.PanicOnErr(err)
+	if user.Name != "root" {
+		t.Skip("don't run iptables tests if you're not root")
+	}
+}
+
 func TestBasic(te *testing.T) {
 	t := tester.New(te)
-	ipt, err := NewIPTables()
+	shouldWeTestLocalIPTables(t)
+	ipt, err := NewIPTables(exec.New())
 	t.PanicOnErr(err)
 
 	t.Print(ipt)
@@ -16,7 +34,7 @@ func TestBasic(te *testing.T) {
 	t.PanicOnErr(err)
 
 	pr := ProxyRule{
-		localIP:         "1.2.3.4",
+		proxyIP:         "1.2.3.4",
 		containerIP:     "2.3.4.5",
 		requestedPort:   20201,
 		destinationPort: 20202,
@@ -28,4 +46,166 @@ func TestBasic(te *testing.T) {
 	err = ipt.DeleteChains()
 	t.PanicOnErr(err)
 
+}
+
+func TestBasicRedirect(te *testing.T) {
+	t := tester.New(te)
+	shouldWeTestLocalIPTables(t)
+
+	ipt, err := NewIPTables(exec.New())
+	t.PanicOnErr(err)
+
+	t.PanicOnErr(ipt.CreateChains())
+
+	pr := ProxyRule{
+		proxyIP:         "192.168.86.30",
+		containerIP:     "172.17.0.2",
+		requestedPort:   80,
+		destinationPort: 8084,
+	}
+	t.PanicOnErr(ipt.AddProxyRule(pr))
+
+	exists, err := ipt.RuleExists(pr)
+	t.PanicOnErr(err)
+	t.Assert().True(exists)
+
+	t.PanicOnErr(
+		ipt.DeleteProxyRule(pr))
+
+	t.PanicOnErr(
+		ipt.DeleteChains())
+
+}
+
+func newDockerIptables(networkMode ...string) (cont *docktest.Container, err error) {
+	client, err := docktest.NewClient()
+	if err != nil {
+		return
+	}
+	netMode := ""
+	if len(networkMode) > 0 {
+		netMode = networkMode[0]
+	}
+	cont, err = client.ContainerCreateAndStart(docktest.ContainerCreateOptions{
+		Name:        "host-iptables",
+		Image:       "nixery.dev/shell/iptables/busybox",
+		Cmd:         []string{"sleep", "1000000"},
+		CapAdd:      []string{"NET_ADMIN"},
+		NetworkMode: netMode,
+	})
+	if err != nil {
+		return
+	}
+	if _, _, err = cont.Exec([]string{"bash", "-c", "mkdir -p /run && touch /run/xtables.lock"}); err != nil {
+		return
+	}
+	return
+}
+
+func TestBasicRedirectWithinDocker(te *testing.T) {
+	t := tester.New(te)
+
+	cont, err := newDockerIptables()
+	defer cont.Delete()
+	t.PanicOnErr(err)
+	ipt, err := NewIPTables(docktest.NewExecInterface(cont))
+	t.PanicOnErr(err)
+
+	t.PanicOnErr(ipt.CreateChains())
+
+	pr := ProxyRule{
+		proxyIP:         "192.168.86.30",
+		containerIP:     "172.17.0.2",
+		requestedPort:   80,
+		destinationPort: 8084,
+	}
+	t.PanicOnErr(ipt.AddProxyRule(pr))
+
+	exists, err := ipt.RuleExists(pr)
+	t.PanicOnErr(err)
+	t.Assert().True(exists)
+
+	rules, err := ipt.GetRules()
+	t.PanicOnErr(err)
+
+	if len(rules) == 0 {
+		t.Fatal("should have returned rules")
+	}
+	t.Assert().Equal(rules[0].Target, "DNAT")
+	t.Assert().Equal(rules[0].Protocol, "tcp")
+	t.PanicOnErr(
+		ipt.DeleteProxyRule(pr))
+
+	t.PanicOnErr(
+		ipt.DeleteChains())
+
+}
+
+// just for iptables:
+//
+// spin up a container with a simple server
+// spin up a container with curl installed
+//
+// spin up a container with net=host and cap-add=net_admin and run the
+// iptables commands in that container
+//
+// then check if the curl container can access the simple server
+
+// for the full proxy:
+//
+// spin up a container with a simple server
+// spin up a container with curl installed
+//
+// spin up a container with net=host and cap-add=net_admin and run the
+// iptables commands in that container, this container also needs to be hosting the proxy
+// or maybe we run the proxy locally? yeah that's not too bad
+//
+// then check if the curl container can access the simple server
+
+func TestFull(te *testing.T) {
+	t := tester.New(te)
+	t.Print(GetOutboundIP())
+	client, err := docktest.NewClient()
+	t.PanicOnErr(err)
+	cont, err := client.ContainerCreateAndStart(docktest.ContainerCreateOptions{
+		Name:  "host-simple-server",
+		Image: "maxmcd/host-simple-server",
+		Cmd:   []string{"/bin/hello", "-ip", "0.0.0.0", "-port", "8084"},
+		Ports: []string{"8084"}})
+	if err != nil {
+		t.Error(err)
+	}
+	defer cont.Delete()
+
+	contCurl, err := client.ContainerCreateAndStart(docktest.ContainerCreateOptions{
+		Name:  "host-simple-curl",
+		Image: "nixery.dev/shell/curl",
+		Cmd:   []string{"sleep", "1000000"},
+	})
+	if err != nil {
+		t.Error(err)
+	}
+	defer contCurl.Delete()
+
+	contIpTables, err := newDockerIptables("host")
+	if err != nil {
+		t.Error(err)
+	}
+	defer contIpTables.Delete()
+
+	// client.RemoveContainer(docker.RemoveContainerOptions{})
+}
+
+// Get preferred outbound ip of this machine
+func GetOutboundIP() net.IP {
+	// https://stackoverflow.com/questions/23558425/how-do-i-get-the-local-ip-address-in-go#comment100001538_37382208
+	conn, err := net.Dial("udp", "8.8.8.8:53")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+
+	return localAddr.IP
 }
