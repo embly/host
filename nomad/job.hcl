@@ -20,7 +20,7 @@ job "scheduler" {
         port_map {
           http = 8080
         }
-        network_mode = "pricing_db_app_default"
+        network_mode = "create_shared"
         network_aliases = [
           "scheduler"
         ]

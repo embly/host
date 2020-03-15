@@ -46,3 +46,19 @@ A deploy could look like:
  - add hostnames to consul
  - open up ports for services on the proxy
  -
+
+there is a proxy
+the proxy takes requests on various ports
+the dns server maps a hostname to the proxy ip address
+so there is a proxy per machine and it's receiving inbound traffic for the services on that machine?
+it allocates various ports on itself, when traffic hits those ports it is round-robined (random) to
+the services it belongs to.
+
+so when the docker driver is set up
+
+for broadcasting:
+    - consul gets the proxy ip and the name of the service
+    - dns gets that ip and that name
+for addressing:
+    - iptables route is written in the docker container to map the outgoing port
+      and proxy ip with the correct destination

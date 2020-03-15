@@ -158,23 +158,27 @@ func (p *File) Container(thread *starlark.Thread, fn *starlark.Builtin,
 
 	for _, kwarg := range kwargs {
 		key := string(kwarg.Index(0).(starlark.String))
+		val := kwarg.Index(1)
 		switch key {
 		case "image":
-			container.Image = string(kwarg.Index(1).(starlark.String))
+			container.Image = string(val.(starlark.String))
 		case "cpu":
-			i, _ := kwarg.Index(1).(starlark.Int).Int64()
+			i, _ := val.(starlark.Int).Int64()
 			container.CPU = int(i)
 		case "connect_to":
 			// TODO
 		case "environment":
-			// TODO
+			container.Environment, err = valueToStringMap(val, "container()", "environment")
+			if err != nil {
+				return
+			}
 		case "ports":
-			container.Ports, container.ports, err = listOfPortsToInt(kwarg.Index(1))
+			container.Ports, container.ports, err = listOfPortsToInt(val)
 			if err != nil {
 				return
 			}
 		case "memory":
-			i, _ := kwarg.Index(1).(starlark.Int).Int64()
+			i, _ := val.(starlark.Int).Int64()
 			container.Memory = int(i)
 		default:
 			err = errors.Errorf(`container() got an unexpected keyword argument '%s'"`, key)
@@ -251,6 +255,39 @@ func (p *File) Service(thread *starlark.Thread, fn *starlark.Builtin,
 	return &ReflectValue{&service}, nil
 }
 
+func valueToStringMap(val starlark.Value, function, param string) (out map[string]string, err error) {
+	out = map[string]string{}
+	maybeErr := errors.Errorf(
+		"%s parameter '%s' expects type 'dict' instead got '%s'",
+		function, param, val.String())
+	if val.Type() != "dict" {
+		err = maybeErr
+		return
+	}
+	dict, ok := val.(starlark.IterableMapping)
+	if !ok {
+		err = maybeErr
+		return
+	}
+	items := dict.Items()
+	for _, item := range items {
+		key := item.Index(0)
+		value := item.Index(1)
+		ks, ok := key.(starlark.String)
+		if !ok {
+			err = errors.Errorf("%s %s expects a dictionary of strings, but got value %s", function, param, key.String())
+			return
+		}
+		vs, ok := value.(starlark.String)
+		if !ok {
+			err = errors.Errorf("%s %s expects a dictionary of strings, but got value %s", function, param, value.String())
+			return
+		}
+		out[ks.GoString()] = vs.GoString()
+	}
+	return
+}
+
 func (file *File) LoadBalancer(thread *starlark.Thread, fn *starlark.Builtin,
 	args starlark.Tuple, kwargs []starlark.Tuple) (v starlark.Value, err error) {
 
@@ -262,31 +299,9 @@ func (file *File) LoadBalancer(thread *starlark.Thread, fn *starlark.Builtin,
 		val := kwarg.Index(1)
 		switch key {
 		case "routes":
-			maybeErr := errors.Errorf("load_balancer() parameter 'routes' expects type 'dict' instead got '%s'", val.String())
-			if val.Type() != "dict" {
-				err = maybeErr
+			lb.Routes, err = valueToStringMap(val, "load_balancer()", "routes")
+			if err != nil {
 				return
-			}
-			dict, ok := val.(starlark.IterableMapping)
-			if !ok {
-				err = maybeErr
-				return
-			}
-			items := dict.Items()
-			for _, item := range items {
-				key := item.Index(0)
-				value := item.Index(1)
-				ks, ok := key.(starlark.String)
-				if !ok {
-					err = errors.Errorf("load_balancer() routes expects a dictionary of strings, but got value %s", key.String())
-					return
-				}
-				vs, ok := value.(starlark.String)
-				if !ok {
-					err = errors.Errorf("load_balancer() routes expects a dictionary of strings, but got value %s", value.String())
-					return
-				}
-				lb.Routes[ks.GoString()] = vs.GoString()
 			}
 		default:
 			err = errors.Errorf(`load_balancer() got an unexpected keyword argument '%s'"`, key)

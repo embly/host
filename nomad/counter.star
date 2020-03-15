@@ -6,7 +6,7 @@ counter = service(
             image="hashicorpnomad/counter-api:v1",
             cpu=500,
             memory=256,
-            ports=[9002],
+            ports=[9001],
         )
     ],
 )
@@ -20,22 +20,22 @@ dashboard = service(
             cpu=500,
             memory=256,
             ports=[9002],
-            connect_to=["counter.counter:9002"],
-            environment={"COUNTING_SERVICE_URL": "counter.counter:9002"},
+            connect_to=["counter.counter:9001"],
+            environment={"COUNTING_SERVICE_URL": "counter.counter:9001"},
         )
     ],
 )
 
 
 standalone = service(
-    "standalone",
+    "standalone2",
     containers=[
         container(
             "counter",
             image="hashicorpnomad/counter-api:v1",
             cpu=500,
             memory=256,
-            ports=[9002],
+            ports=[9001],
         ),
         container(
             "dashboard",
@@ -43,7 +43,7 @@ standalone = service(
             cpu=500,
             memory=256,
             ports=[9002],
-            environment={"COUNTING_SERVICE_URL": "counter:9002"},
+            environment={"COUNTING_SERVICE_URL": "http://counter:9001"},
         ),
     ],
 )

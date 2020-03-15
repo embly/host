@@ -52,8 +52,10 @@ func ServiceToJob(service Service) (job *nomad.Job) {
 	job.AddDatacenter("dc1")
 
 	taskGroup := nomad.NewTaskGroup(service.Name, 1)
-
-	driver := "docker"
+	// taskGroup.Networks = []*nomad.NetworkResource{{
+	// 	Mode: "bridge",
+	// }}
+	driver := "docker-embly"
 	for _, container := range service.Containers {
 		task := nomad.NewTask(container.Name, driver)
 
@@ -75,8 +77,12 @@ func ServiceToJob(service Service) (job *nomad.Job) {
 				},
 			},
 		}
+		task.Env = container.Environment
+
+		task.SetConfig("network_mode", "create_shared")
 		task.SetConfig("image", container.Image)
 		task.SetConfig("port_map", []map[string]int{portMap})
+		task.SetConfig("network_aliases", []string{container.Name})
 		taskGroup.AddTask(task)
 	}
 	job.AddTaskGroup(taskGroup)

@@ -9,6 +9,7 @@ services:
   nomad:
     cap_add:
       - SYS_ADMIN
+      - NET_ADMIN
     build:
       dockerfile: nomad.Dockerfile
       context: .
