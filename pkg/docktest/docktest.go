@@ -133,6 +133,12 @@ func (client *Client) ContainerCreateAndStart(opt ContainerCreateOptions) (cont 
 	if err = client.StartContainer(dcont.ID, nil); err != nil {
 		return
 	}
+	if dcont, err = client.InspectContainerWithOptions(docker.InspectContainerOptions{
+		ID: dcont.ID,
+	}); err != nil {
+		return
+	}
+
 	cont = &Container{Container: dcont}
 	return
 }

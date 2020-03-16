@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"os/user"
@@ -141,33 +142,22 @@ func TestBasicRedirectWithinDocker(te *testing.T) {
 
 }
 
-// just for iptables:
-//
-// spin up a container with a simple server
-// spin up a container with curl installed
-//
-// spin up a container with net=host and cap-add=net_admin and run the
-// iptables commands in that container
-//
-// then check if the curl container can access the simple server
-
-// for the full proxy:
-//
-// spin up a container with a simple server
-// spin up a container with curl installed
-//
-// spin up a container with net=host and cap-add=net_admin and run the
-// iptables commands in that container, this container also needs to be hosting the proxy
-// or maybe we run the proxy locally? yeah that's not too bad
-//
-// then check if the curl container can access the simple server
-
 func TestFull(te *testing.T) {
+	// just for iptables:
+	//
+	// spin up a container with a simple server
+	// spin up a container with curl installed
+	//
+	// spin up a container with net=host and cap-add=net_admin and run the
+	// iptables commands in that container
+	//
+	// then check if the curl container can access the simple server
+
 	t := tester.New(te)
 	t.Print(GetOutboundIP())
 	client, err := docktest.NewClient()
 	t.PanicOnErr(err)
-	cont, err := client.ContainerCreateAndStart(docktest.ContainerCreateOptions{
+	contServer, err := client.ContainerCreateAndStart(docktest.ContainerCreateOptions{
 		Name:  "host-simple-server",
 		Image: "maxmcd/host-simple-server",
 		Cmd:   []string{"/bin/hello", "-ip", "0.0.0.0", "-port", "8084"},
@@ -175,7 +165,7 @@ func TestFull(te *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer cont.Delete()
+	defer contServer.Delete()
 
 	contCurl, err := client.ContainerCreateAndStart(docktest.ContainerCreateOptions{
 		Name:  "host-simple-curl",
@@ -193,7 +183,44 @@ func TestFull(te *testing.T) {
 	}
 	defer contIpTables.Delete()
 
+	// TODO: exentually, this should not be allowed, just hitting the container ip and port...
+	_, _, err = contCurl.Exec([]string{"curl", fmt.Sprintf("%s:8084", contServer.NetworkSettings.IPAddress)})
+	t.PanicOnErr(err)
+
+	ipt, err := NewIPTables(docktest.NewExecInterface(contIpTables))
+	t.PanicOnErr(err)
+
+	t.PanicOnErr(ipt.CreateChains())
+
+	pr := ProxyRule{
+		proxyIP:         contServer.NetworkSettings.IPAddress,
+		containerIP:     contCurl.NetworkSettings.IPAddress,
+		requestedPort:   8032,
+		destinationPort: 8084,
+	}
+	t.PanicOnErr(ipt.AddProxyRule(pr))
+
+	stdout, _, err := contCurl.Exec([]string{"curl", fmt.Sprintf("%s:8032", contServer.NetworkSettings.IPAddress)})
+	t.PanicOnErr(err)
+	t.Assert().Contains(string(stdout), "hello")
+
+	t.PanicOnErr(ipt.DeleteChains())
 	// client.RemoveContainer(docker.RemoveContainerOptions{})
+}
+
+func TestFullProxy(te *testing.T) {
+	// for the full proxy:
+	//
+	// spin up a container with a simple server
+	// spin up a container with curl installed
+	//
+	// spin up a container with net=host and cap-add=net_admin and run the
+	// iptables commands in that container, this container also needs to be hosting the proxy
+	// or maybe we run the proxy locally? yeah that's not too bad
+	//
+	// then check if the curl container can access the simple server
+	// t := tester.New(te)
+
 }
 
 // Get preferred outbound ip of this machine
