@@ -221,6 +221,7 @@ func TestFullProxy(te *testing.T) {
 	// then check if the curl container can access the simple server
 	// t := tester.New(te)
 
+	// TODO
 }
 
 // Get preferred outbound ip of this machine

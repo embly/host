@@ -20,7 +20,15 @@ require (
 	github.com/mitchellh/hashstructure v1.0.0 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/ryanuber/go-glob v1.0.0 // indirect
+	github.com/sirupsen/logrus v1.4.1
 	github.com/ugorji/go v1.1.7 // indirect
 	go.starlark.net v0.0.0-20200306205701-8dd3e2ee1dd5
 	golang.org/x/crypto v0.0.0-20200302210943-78000ba7a073 // indirect
+	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
+	k8s.io/api v0.17.4
+	k8s.io/apimachinery v0.17.4
+	k8s.io/client-go v11.0.0+incompatible // indirect
+	k8s.io/klog v1.0.0
+	k8s.io/kubernetes v1.13.0
+	k8s.io/utils v0.0.0-20200229041039-0a110f9eb7ab // indirect
 )
