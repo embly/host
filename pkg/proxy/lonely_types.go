@@ -5,6 +5,16 @@ import (
 	"strconv"
 )
 
+type Service interface {
+	IsAlive() bool
+	Name() string
+}
+
+type defaultService struct {
+	name string
+	// TODO: alive?
+}
+
 type LoadBalancer interface {
 	NextTask() (Task, error)
 }

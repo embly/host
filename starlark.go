@@ -1,6 +1,8 @@
 package host
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -59,6 +61,22 @@ type Container struct {
 type Port struct {
 	isUDP  bool
 	number int
+}
+
+func (p *Port) protocol() string {
+	if p.isUDP {
+		return "udp"
+	}
+	return "tcp"
+}
+
+func (p *Port) consulName(serviceName, containerName string) string {
+	hash := sha256.New()
+	_, _ = hash.Write([]byte(serviceName))
+	_, _ = hash.Write([]byte(containerName))
+	_, _ = hash.Write([]byte(fmt.Sprint(p.number)))
+	_, _ = hash.Write([]byte(fmt.Sprint(p.protocol())))
+	return fmt.Sprintf("%x", hash.Sum(nil))[:32]
 }
 
 type LoadBalancer struct {

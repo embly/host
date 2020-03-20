@@ -55,17 +55,29 @@ func ServiceToJob(service Service) (job *nomad.Job) {
 	// taskGroup.Networks = []*nomad.NetworkResource{{
 	// 	Mode: "bridge",
 	// }}
-	driver := "docker-embly"
+
+	// TODO: maybe no custom docker driver
+	// driver := "docker-embly"
+	driver := "docker"
 	for _, container := range service.Containers {
 		task := nomad.NewTask(container.Name, driver)
 
 		dynamicPorts := []nomad.Port{}
 		portMap := map[string]int{}
+		services := []*nomad.Service{}
 		for _, port := range container.ports {
 			dynamicPorts = append(dynamicPorts, nomad.Port{
 				Label: fmt.Sprint(port.number),
 			})
 			portMap[fmt.Sprint(port.number)] = port.number
+			services = append(services, &nomad.Service{
+				Name:      port.consulName(service.Name, container.Name),
+				PortLabel: fmt.Sprint(port.number),
+				Tags: []string{
+					fmt.Sprintf("dns-name=%s.%s:%d", container.Name, service.Name, port.number),
+					fmt.Sprintf("protocol=%s", port.protocol()),
+				},
+			})
 		}
 		task.Resources = &nomad.Resources{
 			CPU:      helper.IntToPtr(container.CPU),
@@ -79,11 +91,13 @@ func ServiceToJob(service Service) (job *nomad.Job) {
 		}
 		task.Env = container.Environment
 
-		task.SetConfig("network_mode", "create_shared")
+		// TODO: maybe no custom docker driver
+		// task.SetConfig("network_mode", "create_shared")
+		// task.SetConfig("network_aliases", []string{container.Name})
 		task.SetConfig("image", container.Image)
 		task.SetConfig("port_map", []map[string]int{portMap})
-		task.SetConfig("network_aliases", []string{container.Name})
 		taskGroup.AddTask(task)
+		task.Services = services
 	}
 	job.AddTaskGroup(taskGroup)
 

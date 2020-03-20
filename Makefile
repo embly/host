@@ -11,7 +11,7 @@ nomad_build:
 	cd nomad && docker build -t nomad_nomad:latest -f nomad.Dockerfile .
 
 nomad_run:
-	make -j down build
+	make -j nomad_down nomad_build
 	cd nomad && docker-compose up
 
 nomad_exec:

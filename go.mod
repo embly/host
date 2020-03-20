@@ -5,21 +5,17 @@ go 1.13
 require (
 	github.com/coreos/go-iptables v0.4.5
 	github.com/fsouza/go-dockerclient v1.6.3
-	github.com/hashicorp/consul/api v1.4.0 // indirect
-	github.com/hashicorp/go-immutable-radix v1.1.0 // indirect
+	github.com/hashicorp/consul v1.7.2
+	github.com/hashicorp/consul/api v1.4.0
 	github.com/hashicorp/go-plugin v1.1.0 // indirect
 	github.com/hashicorp/go-version v1.2.0 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
-	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/hashicorp/nomad v0.10.4
 	github.com/hashicorp/nomad/api v0.0.0-20200310211547-64c40af018e0
-	github.com/hashicorp/raft v1.1.2 // indirect
 	github.com/maxmcd/tester v0.0.0-20200315004439-02c29039e2ff
-	github.com/miekg/dns v1.0.14
-	github.com/mitchellh/copystructure v1.0.0 // indirect
+	github.com/miekg/dns v1.1.26
 	github.com/mitchellh/hashstructure v1.0.0 // indirect
 	github.com/pkg/errors v0.9.1
-	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/sirupsen/logrus v1.4.1
 	github.com/ugorji/go v1.1.7 // indirect
 	go.starlark.net v0.0.0-20200306205701-8dd3e2ee1dd5
