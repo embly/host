@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"fmt"
 	"testing"
 
 	consul "github.com/hashicorp/consul/api"
@@ -15,12 +16,13 @@ func TestConsulBasic(te *testing.T) {
 	}
 	services, _, err := client.Catalog().Services(nil)
 	t.PanicOnErr(err)
+	_ = services
 
-	// for name := range services {
-	// 	service, _, err := client.Catalog().Service(name, "", nil)
-	// 	t.Print(service[0])
-	// 	break
-	// 	t.PanicOnErr(err)
-	// 	fmt.Println(name, service)
-	// }
+	for name := range services {
+		service, _, err := client.Catalog().Service(name, "", nil)
+		t.Print(service[0])
+		break
+		t.PanicOnErr(err)
+		fmt.Println(name, service)
+	}
 }

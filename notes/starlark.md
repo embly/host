@@ -10,7 +10,8 @@ embly.services.flask.ports.http
 embly.services.flask.
 
 
-load("embly", "service", "group")
+load("embly", "job", "task")
+
 flask = service(
     "flask",
     count=2,  # asdfs
@@ -21,10 +22,10 @@ flask = service(
 )
 
 
-flask = group(
+flask = job(
     "flask",
     count=2,  # asdfs
-    containers=[
+    tasks=[
         container(
             "flask",
             image="crccheck/hello-world",
