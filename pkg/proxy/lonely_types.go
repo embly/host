@@ -5,18 +5,13 @@ import (
 	"strconv"
 )
 
-type Service interface {
-	IsAlive() bool
-	Name() string
-}
-
 type defaultService struct {
 	name string
 	// TODO: alive?
 }
 
 type LoadBalancer interface {
-	NextTask() (Task, error)
+	NextTask() (XTask, error)
 }
 
 var _ LoadBalancer = &randomLoadBalancer{}
@@ -26,15 +21,15 @@ type randomLoadBalancer struct {
 	alive bool
 }
 
-func (lb *randomLoadBalancer) NextTask() (task Task, err error) {
+func (lb *randomLoadBalancer) NextTask() (task XTask, err error) {
 	return
 }
 
-type Task interface {
+type XTask interface {
 	Address() string
 }
 
-var _ Task = &defaultTask{}
+var _ XTask = &defaultTask{}
 
 type defaultTask struct {
 	ip   net.IP

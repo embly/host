@@ -1,50 +1,80 @@
 package proxy
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
+	"github.com/hashicorp/consul/api"
 	consul "github.com/hashicorp/consul/api"
 	"github.com/sirupsen/logrus"
 )
 
-type Consul interface {
-	Start(config *consul.Config) (err error)
-	ListenForChanges() error
-	Services() ([]Service, error)
-	ServiceDeletedCallback(func(Service) error)
+type ServiceBalancer struct {
+	alive      bool
+	consulData ConsulData
+	hostname   string
+	port       int
 }
 
-var _ Consul = &defaultConsul{}
+type Service struct {
+	inventory map[string]Task
+	hostname  string
+	port      int
+}
 
-type defaultConsul struct {
-	client          *consul.Client
+func (s *Service) Name() string {
+	return fmt.Sprintf("%s:%d", s.hostname, s.port)
+}
+
+type Task struct {
+	address   string
+	port      int
+	node      string
+	serviceID string
+}
+
+func (t *Task) Name() string {
+	return fmt.Sprintf("%s.%s", t.node, t.serviceID)
+}
+
+type ConsulData interface {
+	Updates(chan map[string]Service)
+}
+
+var _ ConsulData = &defaultConsulData{}
+
+type defaultConsulData struct {
+	cc              ConsulClient
 	serviceParallel int
 }
 
-func NewConsul() Consul {
-	return &defaultConsul{
+func NewConsulData() (cd ConsulData, err error) {
+	cc, err := NewConsulClient(api.DefaultConfig())
+	if err != nil {
+		return
+	}
+	cd = &defaultConsulData{
+		cc:              cc,
 		serviceParallel: 3,
 	}
-}
-
-func (c *defaultConsul) Start(config *consul.Config) (err error) {
-	c.client, err = consul.NewClient(config)
-	if err != nil {
-		return
-	}
-	services, _, err := c.client.Catalog().Services(nil)
-	if err != nil {
-		return
-	}
-	_ = services
 	return
 }
-func (c *defaultConsul) Services() (services []Service, err error) {
-	return
-}
-func (c *defaultConsul) ServiceDeletedCallback(cb func(Service) error) {
 
+func (c *defaultConsulData) Updates(ch chan map[string]Service) {
+	var lastIndex uint64
+	var q *consul.QueryOptions
+	for {
+		q = &consul.QueryOptions{RequireConsistent: true, WaitIndex: lastIndex}
+		serviceTags, meta, err := c.cc.Services(q)
+		if err != nil {
+			logrus.Error(err)
+			return
+		}
+		serviceTags = filterServices(serviceTags)
+		ch <- c.getInventory(serviceTags)
+		lastIndex = meta.LastIndex
+	}
 }
 
 type TmpService struct {
@@ -75,27 +105,29 @@ func tagsToDnsData(tags []string) (name string, port int) {
 	return
 }
 
-func (c *defaultConsul) getServiceInstaces(name string) (instances []TmpService) {
-	services, _, err := c.client.Catalog().Service(name, "", nil)
+func (c *defaultConsulData) getService(name string, tags []string) (service Service) {
+	dnsName, dnsPort := tagsToDnsData(tags)
+	if dnsName == "" || dnsPort == 0 {
+		logrus.Error("error parsing tags on service")
+		return
+	}
+	service.port = dnsPort
+	service.hostname = dnsName
+	service.inventory = map[string]Task{}
+	services, err := c.cc.Service(name, "")
 	if err != nil {
 		logrus.Error(err)
 		return
 	}
-	for _, service := range services {
-		// TODO: why parse these here if they're the same on every service
-		dnsName, dnsPort := tagsToDnsData(service.ServiceTags)
-		if dnsName == "" || dnsPort == 0 {
-			logrus.Error("error parsing tags on service", service.Node, service.ServiceID)
+	for _, s := range services {
+		task := Task{
+			address:   s.Address,
+			port:      s.ServicePort,
+			node:      s.Node,
+			serviceID: s.ServiceID,
 		}
-		instances = append(instances, TmpService{
-			address: service.Address,
-			port:    service.ServicePort,
-			dnsName: dnsName,
-			dnsPort: dnsPort,
-		})
-		// service.Address
+		service.inventory[task.Name()] = task
 	}
-
 	return
 }
 
@@ -116,58 +148,33 @@ func filterServices(serviceNames map[string][]string) map[string][]string {
 	}
 	return out
 }
-func (c *defaultConsul) getServices() (services []TmpService) {
-	serviceNames, _, err := c.client.Catalog().Services(nil)
-	if err != nil {
-		logrus.Error(err)
-		return
-	}
-	serviceNames = filterServices(serviceNames)
+func (c *defaultConsulData) getInventory(serviceTags map[string][]string) (inventory map[string]Service) {
+
+	inventory = map[string]Service{}
 
 	n := c.serviceParallel
 	if n <= 0 {
-		n = 1
+		n = 3
 	}
 
 	sem := make(chan int, n)
-	cfgs := make(chan []TmpService, len(serviceNames))
-	for name := range serviceNames {
-		go func(name string) {
+
+	cfgs := make(chan Service, len(serviceTags))
+	for name, tags := range serviceTags {
+		name, tags := name, tags
+		go func() {
 			sem <- 1
-			cfgs <- c.getServiceInstaces(name)
+			cfgs <- c.getService(name, tags)
 			<-sem
-		}(name)
+		}()
 	}
 
-	for i := 0; i < len(serviceNames); i++ {
-		cfg := <-cfgs
-		services = append(services, cfg...)
+	for i := 0; i < len(serviceTags); i++ {
+		svc := <-cfgs
+		if svc.hostname != "" {
+			inventory[svc.Name()] = svc
+		}
 	}
 	return
 
-}
-
-func (c *defaultConsul) ListenForChanges() (err error) {
-	// n := 1
-	// if n <= 0 {
-	// 	n = 1
-	// }
-
-	// sem := make(chan int, n)
-	// cfgs := make(chan []string, len(m))
-	// for name, passing := range m {
-	// 	name, passing := name, passing
-	// 	go func() {
-	// 		sem <- 1
-	// 		cfgs <- w.serviceConfig(name, passing)
-	// 		<-sem
-	// 	}()
-	// }
-
-	// var config []string
-	// for i := 0; i < len(m); i++ {
-	// 	cfg := <-cfgs
-	// 	config = append(config, cfg...)
-	// }
-	return
 }

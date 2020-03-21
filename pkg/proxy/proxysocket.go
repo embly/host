@@ -21,7 +21,7 @@ type ProxySocket interface {
 	// while sessions are active.
 	Close() error
 	// ProxyLoop proxies incoming connections for the specified service to the service endpoints.
-	ProxyLoop(service Service, loadBalancer LoadBalancer)
+	ProxyLoop(service ServiceBalancer, loadBalancer LoadBalancer)
 	// ListenPort returns the host port that the ProxySocket is listening on
 	ListenPort() int
 }
@@ -71,15 +71,15 @@ func (tcp *tcpProxySocket) ListenPort() int {
 
 // TryConnectEndpoints attempts to connect to the next available endpoint for the given service, cycling
 // through until it is able to successfully connect, or it has tried with all timeouts in EndpointDialTimeouts.
-func TryConnectEndpoints(service Service, srcAddr net.Addr, protocol string, loadBalancer LoadBalancer) (out net.Conn, err error) {
+func TryConnectEndpoints(service ServiceBalancer, srcAddr net.Addr, protocol string, loadBalancer LoadBalancer) (out net.Conn, err error) {
 	// TODO: sessionAffinityReset := false
 	for _, dialTimeout := range EndpointDialTimeouts {
 		task, err := loadBalancer.NextTask()
 		if err != nil {
-			logrus.Errorf("Couldn't find an endpoint for %s: %v", service.Name(), err)
+			logrus.Errorf("Couldn't find an endpoint for %s: %v", service.hostname, err)
 			return nil, err
 		}
-		logrus.Infof("Mapped service %q to endpoint %s", service.Name(), task)
+		logrus.Infof("Mapped service %q to endpoint %s", service.hostname, task)
 		// TODO: This could spin up a new goroutine to make the outbound connection,
 		// and keep accepting inbound traffic.
 		outConn, err := net.DialTimeout(protocol, task.Address(), dialTimeout)
@@ -96,9 +96,9 @@ func TryConnectEndpoints(service Service, srcAddr net.Addr, protocol string, loa
 	return nil, fmt.Errorf("failed to connect to an endpoint.")
 }
 
-func (tcp *tcpProxySocket) ProxyLoop(service Service, loadBalancer LoadBalancer) {
+func (tcp *tcpProxySocket) ProxyLoop(service ServiceBalancer, loadBalancer LoadBalancer) {
 	for {
-		if !service.IsAlive() {
+		if !service.alive {
 			// The service port was closed or replaced.
 			return
 		}
@@ -112,7 +112,7 @@ func (tcp *tcpProxySocket) ProxyLoop(service Service, loadBalancer LoadBalancer)
 			if isClosedError(err) {
 				return
 			}
-			if !service.IsAlive() {
+			if !service.alive {
 				// Then the service port was just closed so the accept failure is to be expected.
 				return
 			}
@@ -182,7 +182,7 @@ func newClientCache() *ClientCache {
 	return &ClientCache{Clients: map[string]net.Conn{}}
 }
 
-func (udp *udpProxySocket) ProxyLoop(service Service, loadBalancer LoadBalancer) {
+func (udp *udpProxySocket) ProxyLoop(service ServiceBalancer, loadBalancer LoadBalancer) {
 	// TODO: should this be associated with the Service?
 	activeClients := newClientCache()
 
@@ -190,7 +190,7 @@ func (udp *udpProxySocket) ProxyLoop(service Service, loadBalancer LoadBalancer)
 	timeout := time.Millisecond * 100
 	var buffer [4096]byte // 4KiB should be enough for most whole-packets
 	for {
-		if !service.IsAlive() {
+		if !service.alive {
 			// The service port was closed or replaced.
 			break
 		}
@@ -231,7 +231,7 @@ func (udp *udpProxySocket) ProxyLoop(service Service, loadBalancer LoadBalancer)
 	}
 }
 
-func (udp *udpProxySocket) getBackendConn(activeClients *ClientCache, cliAddr net.Addr, loadBalancer LoadBalancer, service Service, timeout time.Duration) (net.Conn, error) {
+func (udp *udpProxySocket) getBackendConn(activeClients *ClientCache, cliAddr net.Addr, loadBalancer LoadBalancer, service ServiceBalancer, timeout time.Duration) (net.Conn, error) {
 	activeClients.Mu.Lock()
 	defer activeClients.Mu.Unlock()
 
