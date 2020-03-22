@@ -1,11 +1,50 @@
 package agent
 
 import (
+	"fmt"
+	"math/rand"
 	"testing"
 
 	consul "github.com/hashicorp/consul/api"
+	"github.com/hashicorp/go-uuid"
 	"github.com/maxmcd/tester"
 )
+
+func randomPort() int {
+	min := 1
+	max := 1<<16 - 1
+	return rand.Intn(max-min) + min
+}
+
+func newServiceData(name string, hostname string, port int, protocol string, count int) (string, []string, []*consul.CatalogService) {
+	tags := []string{
+		fmt.Sprintf("dns-name=%s:%d", hostname, port),
+		fmt.Sprintf("protocol=%s", protocol),
+	}
+
+	if count == 0 {
+		count = 1
+	}
+	var css []*consul.CatalogService
+	for i := 0; i < count; i++ {
+		id, err := uuid.GenerateUUID()
+		if err != nil {
+			panic(err)
+		}
+		css = append(css, &consul.CatalogService{
+			ID:      id,
+			Node:    "f0ca171f3b88",
+			Address: "127.0.0.1",
+			// this is not how consul creates the serviceID, but we just need them to be unique per CatalogService
+			ServiceID:      fmt.Sprintf("_nomad-task-%s-dashboard-%s-%d", id, name, port),
+			ServiceName:    name,
+			ServiceAddress: "127.0.0.1",
+			ServiceTags:    tags,
+			ServicePort:    randomPort(),
+		})
+	}
+	return name, tags, css
+}
 
 func TestFakeClient(te *testing.T) {
 	t := tester.New(te)
@@ -16,7 +55,6 @@ func TestFakeClient(te *testing.T) {
 	cd := &defaultConsulData{
 		cc: fcc,
 	}
-	_ = cd
 
 	fcc.services = map[string][]string{
 		"44959340f59d497f95b667902990da5f": []string{"dns-name=dashboard.standalone2:9002", "protocol=tcp"},
@@ -66,6 +104,7 @@ func TestFakeClient(te *testing.T) {
 		service := inventory["counter.counter:9001"]
 		t.Assert().Equal("counter.counter", service.hostname)
 		t.Assert().Equal(9001, service.port)
+		t.Assert().Equal("tcp", service.protocol)
 		for _, task := range service.inventory {
 			t.Assert().Equal(23674, task.port)
 			t.Assert().Equal("127.0.0.1", task.address)

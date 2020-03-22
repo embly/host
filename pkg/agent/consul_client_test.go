@@ -26,23 +26,37 @@ func newFakeConsulClient() *fakeConsulClient {
 }
 
 func (fcc *fakeConsulClient) pushUpdate(name string, tags []string, css []*consul.CatalogService) {
+	fcc.cond.L.Lock()
 	fcc.services[name] = tags
 	fcc.catalogService[name] = css
 	fcc.index++
+	fcc.cond.L.Unlock()
+	fcc.cond.Broadcast()
+}
+
+func (fcc *fakeConsulClient) deleteService(name string) {
+	fcc.cond.L.Lock()
+	delete(fcc.services, name)
+	delete(fcc.catalogService, name)
+	fcc.index++
+	fcc.cond.L.Unlock()
 	fcc.cond.Broadcast()
 }
 
 func (fcc *fakeConsulClient) Services(q *consul.QueryOptions) (map[string][]string, *consul.QueryMeta, error) {
 	for {
+		fcc.cond.L.Lock()
 		if q.WaitIndex < fcc.index {
+			fcc.cond.L.Unlock()
 			return fcc.services, &consul.QueryMeta{LastIndex: fcc.index}, nil
 		}
-		fcc.cond.L.Lock()
 		fcc.cond.Wait()
 		fcc.cond.L.Unlock()
 	}
 }
 
 func (fcc *fakeConsulClient) Service(name, tag string) ([]*consul.CatalogService, error) {
+	fcc.cond.L.Lock()
+	defer fcc.cond.L.Unlock()
 	return fcc.catalogService[name], nil
 }

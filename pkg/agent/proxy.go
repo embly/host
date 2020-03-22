@@ -2,6 +2,7 @@ package agent
 
 import (
 	"net"
+	"sync"
 
 	"github.com/sirupsen/logrus"
 )
@@ -9,12 +10,21 @@ import (
 type Proxy struct {
 	ip             net.IP
 	cd             ConsulData
+	lock           sync.RWMutex
 	inventory      map[string]*Service
 	proxies        map[string]ProxySocket
 	proxyGenerator ProxySocketGen
+
+	cond sync.Cond
 }
 
 func (p *Proxy) Start() {
+	if p.inventory == nil {
+		p.inventory = map[string]*Service{}
+	}
+	if p.proxies == nil {
+		p.proxies = map[string]ProxySocket{}
+	}
 	updatesChan := make(chan map[string]Service)
 	go p.cd.Updates(updatesChan)
 	for {
@@ -24,14 +34,24 @@ func (p *Proxy) Start() {
 		// update inventory map
 		// this in turn updates *Service in the Proxysocket
 		p.processUpdate(inventory)
+		p.cond.Broadcast()
 	}
 }
 
+// wait is used for testing to wait for the next inventory update
+func (p *Proxy) wait() {
+	p.cond.L.Lock()
+	p.cond.Wait()
+	p.cond.L.Unlock()
+}
+
 func (p *Proxy) processUpdate(inventory map[string]Service) (new []*Service) {
+	p.lock.Lock()
 	for key, service := range inventory {
-		svc := service
 		// check for services we don't have and add them
-		if _, ok := p.inventory[key]; !ok {
+		_, ok := p.inventory[key]
+		if !ok {
+			svc := service
 			new = append(new, &svc)
 			// add an entirely new service
 			proxySocket, err := p.proxyGenerator.NewProxySocket(svc.protocol, p.ip, 0)
@@ -43,9 +63,7 @@ func (p *Proxy) processUpdate(inventory map[string]Service) (new []*Service) {
 			}
 			go proxySocket.ProxyLoop(&svc)
 			p.inventory[key] = &svc
-
 			p.proxies[key] = proxySocket
-
 			// TODO: add new proxy here as well
 		} else {
 			// update the task list on an existing serivice
@@ -60,10 +78,10 @@ func (p *Proxy) processUpdate(inventory map[string]Service) (new []*Service) {
 			// drop the proxy from the map and it will eventually exit
 			p.inventory[key].alive = false
 			p.proxies[key].Close()
-
 			delete(p.inventory, key)
 			delete(p.proxies, key)
 		}
 	}
+	p.lock.Unlock()
 	return
 }

@@ -171,6 +171,7 @@ func copyBytes(direction string, dest, src *net.TCPConn, wg *sync.WaitGroup) {
 type udpProxySocket struct {
 	*net.UDPConn
 	port int
+	lock sync.Mutex
 }
 
 func (udp *udpProxySocket) ListenPort() int {

@@ -51,7 +51,7 @@ func ServiceToJob(service Service) (job *nomad.Job) {
 	job = nomad.NewServiceJob(service.Name, service.Name, "dc1", 1)
 	job.AddDatacenter("dc1")
 
-	taskGroup := nomad.NewTaskGroup(service.Name, 1)
+	taskGroup := nomad.NewTaskGroup(service.Name, 2)
 	// taskGroup.Networks = []*nomad.NetworkResource{{
 	// 	Mode: "bridge",
 	// }}

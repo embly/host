@@ -2,8 +2,10 @@ package agent
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
+	"sync"
 
 	consul "github.com/hashicorp/consul/api"
 	"github.com/sirupsen/logrus"
@@ -12,6 +14,7 @@ import (
 // Service defines a collection of tasks that can be routed to. Service will load balance traffic between these tasks
 type Service struct {
 	inventory map[string]Task
+	lock      *sync.RWMutex
 	hostname  string
 	port      int
 	alive     bool
@@ -24,6 +27,7 @@ func (s *Service) Name() string {
 
 func (s *Service) processUpdate(inventory map[string]Task) {
 	// check for new tasks we don't have and add them
+	s.lock.Lock()
 	for key, task := range inventory {
 		if _, ok := s.inventory[key]; !ok {
 			s.inventory[key] = task
@@ -36,9 +40,13 @@ func (s *Service) processUpdate(inventory map[string]Task) {
 			delete(s.inventory, key)
 		}
 	}
+	s.lock.Unlock()
 }
 
 func (s *Service) NextTask() (task Task, err error) {
+	for _, task := range s.inventory {
+		return task, nil
+	}
 	return
 }
 
@@ -54,7 +62,7 @@ func (t *Task) Name() string {
 }
 
 func (t *Task) Address() string {
-	return ""
+	return net.JoinHostPort(t.address, strconv.Itoa(t.port))
 }
 
 type ConsulData interface {
@@ -96,7 +104,7 @@ func (c *defaultConsulData) Updates(ch chan map[string]Service) {
 	}
 }
 
-func tagsToDNSData(tags []string) (name string, port int) {
+func tagsToData(tags []string) (name, protocol string, port int) {
 	for _, tag := range tags {
 		if strings.Contains(tag, "dns-name") {
 			parts := strings.Split(tag, "=")
@@ -109,20 +117,29 @@ func tagsToDNSData(tags []string) (name string, port int) {
 			}
 			port, _ = strconv.Atoi(hostParts[1])
 			name = hostParts[0]
-			return
+		}
+		if strings.Contains(tag, "protocol") {
+			parts := strings.Split(tag, "=")
+			if len(parts) <= 1 {
+				continue
+			}
+			protocol = parts[1]
 		}
 	}
-	logrus.Error("dns-name not found")
 	return
 }
 
 func (c *defaultConsulData) getService(name string, tags []string) (service Service) {
-	dnsName, dnsPort := tagsToDNSData(tags)
+	service.alive = true
+	service.lock = &sync.RWMutex{}
+
+	dnsName, protocol, dnsPort := tagsToData(tags)
 	if dnsName == "" || dnsPort == 0 {
 		logrus.Error("error parsing tags on service")
 		return
 	}
 	service.port = dnsPort
+	service.protocol = protocol
 	service.hostname = dnsName
 	service.inventory = map[string]Task{}
 	services, err := c.cc.Service(name, "")
@@ -171,7 +188,7 @@ func (c *defaultConsulData) getInventory(serviceTags map[string][]string) (inven
 
 	cfgs := make(chan Service, len(serviceTags))
 	for name, tags := range serviceTags {
-		name, tags := name, tags
+		tags, name := tags, name
 		go func() {
 			sem <- 1
 			cfgs <- c.getService(name, tags)

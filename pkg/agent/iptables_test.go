@@ -205,20 +205,17 @@ func TestFull(te *testing.T) {
 	// client.RemoveContainer(docker.RemoveContainerOptions{})
 }
 
-func TestFullProxy(te *testing.T) {
-	// for the full proxy:
-	//
-	// spin up a container with a simple server
-	// spin up a container with curl installed
-	//
-	// spin up a container with net=host and cap-add=net_admin and run the
-	// iptables commands in that container, this container also needs to be hosting the proxy
-	// or maybe we run the proxy locally? yeah that's not too bad
-	//
-	// then check if the curl container can access the simple server
-	// t := tester.New(te)
-
-	// TODO
+func GetFreePort() int {
+	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
+	if err != nil {
+		panic(err)
+	}
+	l, err := net.ListenTCP("tcp", addr)
+	if err != nil {
+		panic(err)
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port
 }
 
 // Get preferred outbound ip of this machine
