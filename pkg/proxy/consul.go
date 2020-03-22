@@ -10,21 +10,36 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type ServiceBalancer struct {
-	alive      bool
-	consulData ConsulData
-	hostname   string
-	port       int
-}
-
 type Service struct {
 	inventory map[string]Task
 	hostname  string
 	port      int
+	alive     bool
+	protocol  string
 }
 
 func (s *Service) Name() string {
 	return fmt.Sprintf("%s:%d", s.hostname, s.port)
+}
+
+func (s *Service) processUpdate(inventory map[string]Task) {
+	// check for new tasks we don't have and add them
+	for key, task := range inventory {
+		if _, ok := s.inventory[key]; !ok {
+			s.inventory[key] = task
+		}
+	}
+
+	// check for tasks that no longer exist and remove them
+	for key := range s.inventory {
+		if _, ok := inventory[key]; !ok {
+			delete(s.inventory, key)
+		}
+	}
+}
+
+func (s *Service) NextTask() (task Task, err error) {
+	return
 }
 
 type Task struct {
@@ -36,6 +51,10 @@ type Task struct {
 
 func (t *Task) Name() string {
 	return fmt.Sprintf("%s.%s", t.node, t.serviceID)
+}
+
+func (t *Task) Address() string {
+	return ""
 }
 
 type ConsulData interface {
@@ -75,14 +94,6 @@ func (c *defaultConsulData) Updates(ch chan map[string]Service) {
 		ch <- c.getInventory(serviceTags)
 		lastIndex = meta.LastIndex
 	}
-}
-
-type TmpService struct {
-	address  string
-	port     int
-	protocol string
-	dnsName  string
-	dnsPort  int
 }
 
 func tagsToDnsData(tags []string) (name string, port int) {

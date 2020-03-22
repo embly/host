@@ -107,7 +107,7 @@ func TestBasicRedirectWithinDocker(te *testing.T) {
 	t := tester.New(te)
 
 	cont, err := newDockerIptables()
-	defer cont.Delete()
+	defer func() { _ = cont.Delete() }()
 	t.PanicOnErr(err)
 	ipt, err := NewIPTables(docktest.NewExecInterface(cont))
 	t.PanicOnErr(err)
@@ -165,7 +165,7 @@ func TestFull(te *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer contServer.Delete()
+	defer func() { _ = contServer.Delete() }()
 
 	contCurl, err := client.ContainerCreateAndStart(docktest.ContainerCreateOptions{
 		Name:  "host-simple-curl",
@@ -175,13 +175,13 @@ func TestFull(te *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer contCurl.Delete()
+	defer func() { _ = contCurl.Delete() }()
 
 	contIpTables, err := newDockerIptables("host")
 	if err != nil {
 		t.Error(err)
 	}
-	defer contIpTables.Delete()
+	defer func() { _ = contIpTables.Delete() }()
 
 	// TODO: exentually, this should not be allowed, just hitting the container ip and port...
 	_, _, err = contCurl.Exec([]string{"curl", fmt.Sprintf("%s:8084", contServer.NetworkSettings.IPAddress)})

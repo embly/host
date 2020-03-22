@@ -97,16 +97,3 @@ func TestFakeClient(te *testing.T) {
 	}
 
 }
-
-func TestConsulBasic(te *testing.T) {
-	t := tester.New(te)
-	cd, err := NewConsulData()
-	t.PanicOnErr(err)
-
-	updatesChan := make(chan map[string]Service)
-	go cd.Updates(updatesChan)
-
-	inventory := <-updatesChan
-	t.Print(inventory)
-	_ = inventory
-}
