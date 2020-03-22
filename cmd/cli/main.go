@@ -19,5 +19,4 @@ func main() {
 		err := host.DeployIsh(job)
 		fmt.Println(err)
 	}
-
 }

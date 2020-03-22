@@ -142,7 +142,6 @@ func (ipt *IPTables) Proto() Protocol {
 func (ipt *IPTables) Exists(table, chain string, rulespec ...string) (bool, error) {
 	if !ipt.hasCheck {
 		return ipt.existsForOldIptables(table, chain, rulespec)
-
 	}
 	cmd := append([]string{"-t", table, "-C", chain}, rulespec...)
 	err := ipt.run(cmd...)
@@ -442,7 +441,7 @@ func (ipt *IPTables) runWithOutput(args []string, stdout io.Writer) error {
 			syscall.Close(fmu.fd)
 			return err
 		}
-		defer ul.Unlock()
+		defer func() { _ = ul.Unlock() }()
 	}
 	cmd := ipt.Exec.Command(args[0], args[1:]...)
 	var stderr bytes.Buffer
@@ -470,9 +469,8 @@ func (ipt *IPTables) runWithOutput(args []string, stdout io.Writer) error {
 func getIptablesCommand(proto Protocol) string {
 	if proto == ProtocolIPv6 {
 		return "ip6tables"
-	} else {
-		return "iptables"
 	}
+	return "iptables"
 }
 
 // Checks if iptables has the "-C" and "--wait" flag

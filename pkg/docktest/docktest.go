@@ -76,7 +76,6 @@ type ContainerCreateOptions struct {
 }
 
 func (client *Client) ContainerCreateAndStart(opt ContainerCreateOptions) (cont *Container, err error) {
-
 	expPorts := map[docker.Port]struct{}{}
 	bindings := map[docker.Port][]docker.PortBinding{}
 	for _, port := range opt.Ports {
@@ -166,5 +165,4 @@ func (client *Client) ContainerDeleteByName(name string) (err error) {
 	return client.RemoveContainer(docker.RemoveContainerOptions{
 		ID: cs[0].ID,
 	})
-
 }

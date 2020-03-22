@@ -21,7 +21,7 @@ func NewProject() *Project {
 
 // Project is functioning as some kind of registry of data
 // access patterns here are likely going to have to be very flexible
-// we'll also need for it to work accross many file imports
+// we'll also need for it to work across many file imports
 // very subject to change
 type Project struct {
 	Services      map[string]Service
@@ -145,9 +145,9 @@ func listOfPortsToInt(val starlark.Value) (out []string, ports []Port, err error
 	return
 }
 
-func (p *File) Validate() (err error) {
+func (file *File) Validate() (err error) {
 	validAddressableDomains := map[string]struct{}{}
-	for sName, service := range p.Services {
+	for sName, service := range file.Services {
 		for cName, container := range service.Containers {
 			for _, value := range container.Ports {
 				// TODO parse ports
@@ -156,7 +156,7 @@ func (p *File) Validate() (err error) {
 		}
 	}
 
-	for _, lb := range p.LoadBalancers {
+	for _, lb := range file.LoadBalancers {
 		for host, dest := range lb.Routes {
 			if _, ok := validAddressableDomains[dest]; !ok {
 				_ = host
@@ -168,7 +168,7 @@ func (p *File) Validate() (err error) {
 	return
 }
 
-func (p *File) Container(thread *starlark.Thread, fn *starlark.Builtin,
+func (file *File) Container(thread *starlark.Thread, fn *starlark.Builtin,
 	args starlark.Tuple, kwargs []starlark.Tuple) (v starlark.Value, err error) {
 	name := string(args.Index(0).(starlark.String))
 	container := Container{}
@@ -210,13 +210,13 @@ func (p *File) Container(thread *starlark.Thread, fn *starlark.Builtin,
 	}
 
 	// for later lookups
-	container.id = len(p.Containers)
+	container.id = len(file.Containers)
 
-	p.Containers = append(p.Containers, container)
+	file.Containers = append(file.Containers, container)
 	return &ReflectValue{val: &container}, nil
 }
 
-func (p *File) Service(thread *starlark.Thread, fn *starlark.Builtin,
+func (file *File) Service(thread *starlark.Thread, fn *starlark.Builtin,
 	args starlark.Tuple, kwargs []starlark.Tuple) (v starlark.Value, err error) {
 	name := string(args.Index(0).(starlark.String))
 	service := Service{Containers: map[string]Container{}}
@@ -265,11 +265,11 @@ func (p *File) Service(thread *starlark.Thread, fn *starlark.Builtin,
 			return
 		}
 	}
-	if _, ok := p.Services[name]; ok {
+	if _, ok := file.Services[name]; ok {
 		err = errors.Errorf(`a service was already created with name '%s'. service names must be unique`, name)
 		return
 	}
-	p.Services[name] = service
+	file.Services[name] = service
 	return &ReflectValue{&service}, nil
 }
 
@@ -308,7 +308,6 @@ func valueToStringMap(val starlark.Value, function, param string) (out map[strin
 
 func (file *File) LoadBalancer(thread *starlark.Thread, fn *starlark.Builtin,
 	args starlark.Tuple, kwargs []starlark.Tuple) (v starlark.Value, err error) {
-
 	name := string(args.Index(0).(starlark.String))
 	lb := LoadBalancer{Routes: map[string]string{}}
 	lb.Name = name

@@ -460,7 +460,6 @@ func TestIsNotExist(t *testing.T) {
 	if !e.IsNotExist() {
 		t.Fatal("IsNotExist returned false, expected true")
 	}
-
 }
 
 func TestIsNotExistForIPv6(t *testing.T) {

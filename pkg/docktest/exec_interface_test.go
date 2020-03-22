@@ -11,7 +11,7 @@ func TestExecInterface(te *testing.T) {
 	t := tester.New(te)
 	client, err := NewClient()
 	t.PanicOnErr(err)
-	contIpTables, err := client.ContainerCreateAndStart(ContainerCreateOptions{
+	contIPTables, err := client.ContainerCreateAndStart(ContainerCreateOptions{
 		Name:  "iptales-test-container",
 		Image: "nixery.dev/shell/iptables/busybox",
 		Cmd:   []string{"sleep", "1000000"},
@@ -20,7 +20,7 @@ func TestExecInterface(te *testing.T) {
 		t.Error(err)
 	}
 
-	exec := ExecInterface{cont: contIpTables}
+	exec := ExecInterface{cont: contIPTables}
 
 	path, err := exec.LookPath("iptables")
 	t.PanicOnErr(err)
