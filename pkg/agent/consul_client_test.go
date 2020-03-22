@@ -1,4 +1,4 @@
-package proxy
+package agent
 
 import (
 	"sync"
@@ -28,7 +28,7 @@ func newFakeConsulClient() *fakeConsulClient {
 func (fcc *fakeConsulClient) pushUpdate(name string, tags []string, css []*consul.CatalogService) {
 	fcc.services[name] = tags
 	fcc.catalogService[name] = css
-	fcc.index += 1
+	fcc.index++
 	fcc.cond.Broadcast()
 }
 

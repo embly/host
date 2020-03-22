@@ -1,4 +1,4 @@
-package proxy
+package agent
 
 import (
 	"testing"
@@ -95,5 +95,4 @@ func TestFakeClient(te *testing.T) {
 			t.Assert().Equal("127.0.0.1", task.address)
 		}
 	}
-
 }

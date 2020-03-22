@@ -1,4 +1,4 @@
-package proxy
+package agent
 
 import (
 	consul "github.com/hashicorp/consul/api"

@@ -1,4 +1,4 @@
-package proxy
+package agent
 
 import (
 	"fmt"
@@ -64,7 +64,7 @@ func (dpsg *defaultProxySocketGen) NewProxySocket(protocol string, ip net.IP, po
 	return nil, fmt.Errorf("unknown protocol %q", protocol)
 }
 
-// How long we wait for a connection to a backend in seconds
+// EndpointDialTimeouts is how long we wait for a connection to a backend in seconds
 var EndpointDialTimeouts = []time.Duration{250 * time.Millisecond, 500 * time.Millisecond, 1 * time.Second, 2 * time.Second}
 
 // tcpProxySocket implements ProxySocket.  Close() is implemented by net.Listener.  When Close() is called,
@@ -102,7 +102,7 @@ func TryConnectEndpoints(service *Service, srcAddr net.Addr, protocol string) (o
 		}
 		return outConn, nil
 	}
-	return nil, fmt.Errorf("failed to connect to an endpoint.")
+	return nil, fmt.Errorf("failed to connect to an endpoint")
 }
 
 func (tcp *tcpProxySocket) ProxyLoop(service *Service) {

@@ -1,15 +1,15 @@
-package proxy
+package agent
 
 import (
 	"fmt"
 	"strconv"
 	"strings"
 
-	"github.com/hashicorp/consul/api"
 	consul "github.com/hashicorp/consul/api"
 	"github.com/sirupsen/logrus"
 )
 
+// Service defines a collection of tasks that can be routed to. Service will load balance traffic between these tasks
 type Service struct {
 	inventory map[string]Task
 	hostname  string
@@ -69,7 +69,7 @@ type defaultConsulData struct {
 }
 
 func NewConsulData() (cd ConsulData, err error) {
-	cc, err := NewConsulClient(api.DefaultConfig())
+	cc, err := NewConsulClient(consul.DefaultConfig())
 	if err != nil {
 		return
 	}
@@ -96,7 +96,7 @@ func (c *defaultConsulData) Updates(ch chan map[string]Service) {
 	}
 }
 
-func tagsToDnsData(tags []string) (name string, port int) {
+func tagsToDNSData(tags []string) (name string, port int) {
 	for _, tag := range tags {
 		if strings.Contains(tag, "dns-name") {
 			parts := strings.Split(tag, "=")
@@ -117,7 +117,7 @@ func tagsToDnsData(tags []string) (name string, port int) {
 }
 
 func (c *defaultConsulData) getService(name string, tags []string) (service Service) {
-	dnsName, dnsPort := tagsToDnsData(tags)
+	dnsName, dnsPort := tagsToDNSData(tags)
 	if dnsName == "" || dnsPort == 0 {
 		logrus.Error("error parsing tags on service")
 		return
@@ -160,7 +160,6 @@ func filterServices(serviceNames map[string][]string) map[string][]string {
 	return out
 }
 func (c *defaultConsulData) getInventory(serviceTags map[string][]string) (inventory map[string]Service) {
-
 	inventory = map[string]Service{}
 
 	n := c.serviceParallel
@@ -187,5 +186,4 @@ func (c *defaultConsulData) getInventory(serviceTags map[string][]string) (inven
 		}
 	}
 	return
-
 }

@@ -1,4 +1,4 @@
-package proxy
+package agent
 
 import (
 	"fmt"
@@ -46,7 +46,6 @@ func TestBasic(te *testing.T) {
 	t.Print(ipt.GetRules())
 	err = ipt.DeleteChains()
 	t.PanicOnErr(err)
-
 }
 
 func TestBasicRedirect(te *testing.T) {
@@ -75,7 +74,6 @@ func TestBasicRedirect(te *testing.T) {
 
 	t.PanicOnErr(
 		ipt.DeleteChains())
-
 }
 
 func newDockerIptables(networkMode ...string) (cont *docktest.Container, err error) {
@@ -139,7 +137,6 @@ func TestBasicRedirectWithinDocker(te *testing.T) {
 
 	t.PanicOnErr(
 		ipt.DeleteChains())
-
 }
 
 func TestFull(te *testing.T) {
@@ -177,17 +174,17 @@ func TestFull(te *testing.T) {
 	}
 	defer func() { _ = contCurl.Delete() }()
 
-	contIpTables, err := newDockerIptables("host")
+	contIPTables, err := newDockerIptables("host")
 	if err != nil {
 		t.Error(err)
 	}
-	defer func() { _ = contIpTables.Delete() }()
+	defer func() { _ = contIPTables.Delete() }()
 
 	// TODO: exentually, this should not be allowed, just hitting the container ip and port...
 	_, _, err = contCurl.Exec([]string{"curl", fmt.Sprintf("%s:8084", contServer.NetworkSettings.IPAddress)})
 	t.PanicOnErr(err)
 
-	ipt, err := NewIPTables(docktest.NewExecInterface(contIpTables))
+	ipt, err := NewIPTables(docktest.NewExecInterface(contIPTables))
 	t.PanicOnErr(err)
 
 	t.PanicOnErr(ipt.CreateChains())
