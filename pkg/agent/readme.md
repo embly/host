@@ -17,3 +17,6 @@ With that in mind, this proxy will:
  - the iptables rules must:
    - know the ip of the container that is allowed to request a given service
    - know the ip and addr of the proxy responsible for that service
+
+
+# TODO

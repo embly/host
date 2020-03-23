@@ -58,6 +58,14 @@ type Container struct {
 	Environment map[string]string
 }
 
+func (c Container) connectToConsulName(serviceName, containerName, connectTo string) string {
+	hash := sha256.New()
+	_, _ = hash.Write([]byte(serviceName))
+	_, _ = hash.Write([]byte(containerName))
+	_, _ = hash.Write([]byte(connectTo))
+	return fmt.Sprintf("%x", hash.Sum(nil))[:32]
+}
+
 type Port struct {
 	isUDP  bool
 	number int
@@ -70,7 +78,7 @@ func (p *Port) protocol() string {
 	return "tcp"
 }
 
-func (p *Port) consulName(serviceName, containerName string) string {
+func (p Port) consulName(serviceName, containerName string) string {
 	hash := sha256.New()
 	_, _ = hash.Write([]byte(serviceName))
 	_, _ = hash.Write([]byte(containerName))
@@ -115,6 +123,7 @@ func validatePort(in string) (port Port, err error) {
 	port.number = i
 	return
 }
+
 func listOfPortsToInt(val starlark.Value) (out []string, ports []Port, err error) {
 	list, ok := val.(*starlark.List)
 	if !ok {
@@ -184,7 +193,10 @@ func (file *File) Container(thread *starlark.Thread, fn *starlark.Builtin,
 			i, _ := val.(starlark.Int).Int64()
 			container.CPU = int(i)
 		case "connect_to":
-			// TODO
+			container.ConnectTo, err = valueToStringArray(val, "container()", "connect_to")
+			if err != nil {
+				return
+			}
 		case "environment":
 			container.Environment, err = valueToStringMap(val, "container()", "environment")
 			if err != nil {
@@ -271,6 +283,30 @@ func (file *File) Service(thread *starlark.Thread, fn *starlark.Builtin,
 	}
 	file.Services[name] = service
 	return &ReflectValue{&service}, nil
+}
+
+func valueToStringArray(val starlark.Value, function, param string) (out []string, err error) {
+	maybeErr := errors.Errorf(
+		"%s parameter '%s' expects type 'list' instead got '%s'",
+		function, param, val.String())
+	if val.Type() != "list" {
+		err = maybeErr
+		return
+	}
+	list, ok := val.(*starlark.List)
+	if !ok {
+		err = maybeErr
+		return
+	}
+	for i := 0; i < list.Len(); i++ {
+		v, ok := list.Index(i).(starlark.String)
+		if !ok {
+			err = errors.Errorf("%s %s expects a list of strings, but got value %s", function, param, v.String())
+			return
+		}
+		out = append(out, v.GoString())
+	}
+	return
 }
 
 func valueToStringMap(val starlark.Value, function, param string) (out map[string]string, err error) {

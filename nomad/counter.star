@@ -9,10 +9,11 @@ counter = service(
             ports=[9001],
         )
     ],
-) 
+)
 
 dashboard = service(
     "dashboard",
+    count=2,
     containers=[
         container(
             "dashboard",

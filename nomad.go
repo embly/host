@@ -51,7 +51,11 @@ func ServiceToJob(service Service) (job *nomad.Job) {
 	job = nomad.NewServiceJob(service.Name, service.Name, "dc1", 1)
 	job.AddDatacenter("dc1")
 
-	taskGroup := nomad.NewTaskGroup(service.Name, 2)
+	count := service.Count
+	if count == 0 {
+		count = 1
+	}
+	taskGroup := nomad.NewTaskGroup(service.Name, count)
 	// taskGroup.Networks = []*nomad.NetworkResource{{
 	// 	Mode: "bridge",
 	// }}
@@ -70,12 +74,24 @@ func ServiceToJob(service Service) (job *nomad.Job) {
 				Label: fmt.Sprint(port.number),
 			})
 			portMap[fmt.Sprint(port.number)] = port.number
+			// Technically we could overload all the proxy
+			// information into one service. If we ever has reason
+			// to think the overhead of spawning a consul service for every port
+			// is a bad idea
 			services = append(services, &nomad.Service{
 				Name:      port.consulName(service.Name, container.Name),
 				PortLabel: fmt.Sprint(port.number),
 				Tags: []string{
 					fmt.Sprintf("dns-name=%s.%s:%d", container.Name, service.Name, port.number),
 					fmt.Sprintf("protocol=%s", port.protocol()),
+				},
+			})
+		}
+		for _, address := range container.ConnectTo {
+			services = append(services, &nomad.Service{
+				Name: container.connectToConsulName(service.Name, container.Name, address),
+				Tags: []string{
+					fmt.Sprintf("connect_to=%s", address),
 				},
 			})
 		}
