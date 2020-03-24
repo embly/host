@@ -10,7 +10,7 @@ import (
 
 func TestDockerLabelSearch(te *testing.T) {
 	t := tester.New(te)
-	t.Skip()
+
 	allocID := "4243abe5-1b52-1791-4af9-8383a649265b"
 	c, err := docker.NewClientFromEnv()
 	t.PanicOnErr(err)
@@ -21,4 +21,13 @@ func TestDockerLabelSearch(te *testing.T) {
 	})
 	t.PanicOnErr(err)
 	t.Print(containers)
+
+	listener := make(chan *docker.APIEvents)
+	err = c.AddEventListener(listener)
+	t.PanicOnErr(err)
+
+	for x := range listener {
+		fmt.Println(x.Action, x.Type, x.Actor.Attributes)
+		t.Print(x)
+	}
 }

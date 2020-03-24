@@ -10,8 +10,31 @@ import (
 
 	"github.com/embly/host/pkg/docktest"
 	"github.com/embly/host/pkg/exec"
+	"github.com/embly/host/pkg/iptables"
 	"github.com/maxmcd/tester"
 )
+
+type fakeIPTables struct {
+	rules map[string]ProxyRule
+}
+
+func (ipt *fakeIPTables) CreateChains() (err error) { return nil }
+func (ipt *fakeIPTables) DeleteChains() (err error) { return nil }
+func (ipt *fakeIPTables) GetRules() (stats []iptables.Stat, err error) {
+	panic("unimplemented")
+}
+func (ipt *fakeIPTables) AddProxyRule(pr ProxyRule) (err error) {
+	ipt.rules[pr.hash()] = pr
+	return nil
+}
+func (ipt *fakeIPTables) RuleExists(pr ProxyRule) (exists bool, err error) {
+	_, exists = ipt.rules[pr.hash()]
+	return
+}
+func (ipt *fakeIPTables) DeleteProxyRule(pr ProxyRule) (err error) {
+	delete(ipt.rules, pr.hash())
+	return
+}
 
 func shouldWeTestLocalIPTables(t tester.Tester) {
 	if runtime.GOOS != "linux" {

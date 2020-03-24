@@ -3,9 +3,11 @@ package agent
 import (
 	"fmt"
 	"net"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	consul "github.com/hashicorp/consul/api"
 	"github.com/sirupsen/logrus"
@@ -53,6 +55,7 @@ func (s *Service) NextTask() (task Task, err error) {
 type Task struct {
 	address   string
 	port      int
+	allocID   string
 	node      string
 	serviceID string
 }
@@ -92,11 +95,13 @@ func (c *defaultConsulData) Updates(ch chan map[string]Service) {
 	var lastIndex uint64
 	var q *consul.QueryOptions
 	for {
+		logrus.WithFields(logrus.Fields{"index": lastIndex}).Info("consul wait")
 		q = &consul.QueryOptions{RequireConsistent: true, WaitIndex: lastIndex}
 		serviceTags, meta, err := c.cc.Services(q)
 		if err != nil {
 			logrus.Error(err)
-			return
+			time.Sleep(time.Second)
+			continue
 		}
 		serviceTags = filterServices(serviceTags)
 		ch <- c.getInventory(serviceTags)
@@ -129,6 +134,17 @@ func tagsToData(tags []string) (name, protocol string, port int) {
 	return
 }
 
+var allocIDRegex = regexp.MustCompile(`_nomad-task-([a-f0-9-]{36})`)
+
+func parseAllocIDFromServiceID(in string) (out string) {
+	matches := allocIDRegex.FindAllStringSubmatch(in, 1)
+	if len(matches) == 0 || len(matches[0]) <= 1 {
+		logrus.Error("could not parse alloc id from: ", in)
+		return
+	}
+	return matches[0][1]
+}
+
 func (c *defaultConsulData) getService(name string, tags []string) (service Service) {
 	service.alive = true
 	service.lock = &sync.RWMutex{}
@@ -153,6 +169,7 @@ func (c *defaultConsulData) getService(name string, tags []string) (service Serv
 			port:      s.ServicePort,
 			node:      s.Node,
 			serviceID: s.ServiceID,
+			allocID:   parseAllocIDFromServiceID(s.ServiceID),
 		}
 		service.inventory[task.Name()] = task
 	}

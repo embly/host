@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"strings"
 
@@ -8,21 +10,31 @@ import (
 	"github.com/embly/host/pkg/iptables"
 )
 
-type IPTables struct {
+type IPTables interface {
+	CreateChains() (err error)
+	DeleteChains() (err error)
+	AddProxyRule(pr ProxyRule) (err error)
+	RuleExists(pr ProxyRule) (exists bool, err error)
+	DeleteProxyRule(pr ProxyRule) (err error)
+	GetRules() (stats []iptables.Stat, err error)
+}
+
+type defaultIPTables struct {
 	ipt *iptables.IPTables
 }
 
-func NewIPTables(execInterface exec.Interface) (ipt *IPTables, err error) {
-	ipt = &IPTables{}
+func NewIPTables(execInterface exec.Interface) (IPTables, error) {
+	var err error
+	ipt := &defaultIPTables{}
 	ipt.ipt, err = iptables.NewWithProtocol(iptables.ProtocolIPv4, execInterface)
-	return
+	return ipt, err
 }
 
 var (
 	emblyPreroutingChain = "EMBLY_PREROUTING"
 )
 
-func (ipt *IPTables) CreateChains() (err error) {
+func (ipt *defaultIPTables) CreateChains() (err error) {
 	err = ipt.ipt.NewChain("nat", emblyPreroutingChain)
 	if isChainExistsErr(err) {
 		return nil
@@ -39,7 +51,7 @@ func (ipt *IPTables) CreateChains() (err error) {
 	return
 }
 
-func (ipt *IPTables) DeleteChains() (err error) {
+func (ipt *defaultIPTables) DeleteChains() (err error) {
 	if err = ipt.ipt.ClearChain("nat", emblyPreroutingChain); err != nil {
 		return
 	}
@@ -57,6 +69,15 @@ type ProxyRule struct {
 	destinationPort int
 }
 
+func (pr ProxyRule) hash() string {
+	hash := sha256.New()
+	_, _ = hash.Write([]byte(pr.proxyIP))
+	_, _ = hash.Write([]byte(pr.containerIP))
+	_ = binary.Write(hash, binary.LittleEndian, int32(pr.requestedPort))
+	_ = binary.Write(hash, binary.LittleEndian, int32(pr.destinationPort))
+	return fmt.Sprintf("%x", hash.Sum(nil))
+}
+
 func (pr ProxyRule) preroutingArgs() []string {
 	// sudo iptables -t nat -A PREROUTING -p tcp -d 192.168.86.30 --dport 80 -j DNAT --to-destination 192.168.86.30:8084
 	return []string{
@@ -69,23 +90,23 @@ func (pr ProxyRule) preroutingArgs() []string {
 	}
 }
 
-func (ipt *IPTables) natAppendIfNoExist(chain string, args []string) (err error) {
+func (ipt *defaultIPTables) natAppendIfNoExist(chain string, args []string) (err error) {
 	return ipt.ipt.AppendUnique("nat", chain, args...)
 }
 
-func (ipt *IPTables) AddProxyRule(pr ProxyRule) (err error) {
+func (ipt *defaultIPTables) AddProxyRule(pr ProxyRule) (err error) {
 	return ipt.natAppendIfNoExist(emblyPreroutingChain, pr.preroutingArgs())
 }
 
-func (ipt *IPTables) RuleExists(pr ProxyRule) (exists bool, err error) {
+func (ipt *defaultIPTables) RuleExists(pr ProxyRule) (exists bool, err error) {
 	return ipt.ipt.Exists("nat", emblyPreroutingChain, pr.preroutingArgs()...)
 }
 
-func (ipt *IPTables) DeleteProxyRule(pr ProxyRule) (err error) {
+func (ipt *defaultIPTables) DeleteProxyRule(pr ProxyRule) (err error) {
 	return ipt.ipt.Delete("nat", emblyPreroutingChain, pr.preroutingArgs()...)
 }
 
-func (ipt *IPTables) GetRules() (stats []iptables.Stat, err error) {
+func (ipt *defaultIPTables) GetRules() (stats []iptables.Stat, err error) {
 	return ipt.ipt.StructuredStats("nat", emblyPreroutingChain)
 }
 

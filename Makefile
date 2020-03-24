@@ -11,7 +11,7 @@ nomad_build:
 	cd nomad && docker build -t nomad_nomad:latest -f nomad.Dockerfile .
 
 nomad_run:
-	make -j nomad_down nomad_build
+	make -j nomad_down nomad_build agent_build
 	cd nomad && docker-compose up
 
 nomad_exec:
@@ -39,6 +39,9 @@ hello_build:
 
 hello_push: hello_build
 	docker push maxmcd/hello:latest
+
+agent_build:
+	cd cmd/agent && docker build -f ./Dockerfile -t embly-host-agent:latest ../../
 
 genapi_ast:
 	cd python && docker build -t embly-host-ast .

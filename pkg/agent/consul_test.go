@@ -105,9 +105,15 @@ func TestFakeClient(te *testing.T) {
 		t.Assert().Equal("counter.counter", service.hostname)
 		t.Assert().Equal(9001, service.port)
 		t.Assert().Equal("tcp", service.protocol)
-		for _, task := range service.inventory {
+		allocIDs := map[string]string{
+			"f0ca171f3b88._nomad-task-16fa5e63-fcbf-54fd-f6f1-88eb57a01590-dashboard-44959340f59d497f95b667902990da5f-9002": "16fa5e63-fcbf-54fd-f6f1-88eb57a01590",
+			"f0ca171f3b88._nomad-task-5e4ae995-0483-a280-d106-b24dd9251d76-dashboard-cbd014d6d6d0eb94588577eb8cd6aad4-9002": "5e4ae995-0483-a280-d106-b24dd9251d76",
+			"f0ca171f3b88._nomad-task-b37ffbde-8990-90a5-1b74-de16225162fd-counter-55e96970a0329e7827c97a64dbafa564-9001":   "b37ffbde-8990-90a5-1b74-de16225162fd",
+		}
+		for id, task := range service.inventory {
 			t.Assert().Equal(23674, task.port)
 			t.Assert().Equal("127.0.0.1", task.address)
+			t.Assert().Equal(allocIDs[id], task.allocID, id)
 		}
 	}
 
@@ -123,7 +129,6 @@ func TestFakeClient(te *testing.T) {
 			ServiceTags:    []string{"dns-name=counter.standalone2:9001", "protocol=tcp"},
 			ServicePort:    30590,
 		}})
-
 	{
 		inventory := <-updatesChan
 		service := inventory["counter.standalone2:9001"]
@@ -131,6 +136,7 @@ func TestFakeClient(te *testing.T) {
 		t.Assert().Equal(9001, service.port)
 		for _, task := range service.inventory {
 			t.Assert().Equal(30590, task.port)
+			t.Assert().Equal("16fa5e63-fcbf-54fd-f6f1-88eb57a01590", task.allocID)
 			t.Assert().Equal("127.0.0.1", task.address)
 		}
 	}

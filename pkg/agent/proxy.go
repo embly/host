@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -18,6 +20,27 @@ type Proxy struct {
 	cond sync.Cond
 }
 
+func NewProxy() *Proxy {
+	var cd ConsulData
+	var err error
+	for _, sleepFor := range EndpointDialTimeouts {
+		cd, err = NewConsulData()
+		if err != nil {
+			time.Sleep(sleepFor)
+		}
+	}
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("connected")
+	return &Proxy{
+		ip:             net.IPv4(127, 0, 0, 1),
+		cd:             cd,
+		proxyGenerator: DefaultProxySocketGen,
+		cond:           sync.Cond{L: &sync.Mutex{}},
+	}
+}
+
 func (p *Proxy) Start() {
 	if p.inventory == nil {
 		p.inventory = map[string]*Service{}
@@ -26,9 +49,11 @@ func (p *Proxy) Start() {
 		p.proxies = map[string]ProxySocket{}
 	}
 	updatesChan := make(chan map[string]Service)
+	logrus.Debug("started listening for updates")
 	go p.cd.Updates(updatesChan)
 	for {
 		inventory := <-updatesChan
+		logrus.Debug("got inventory update")
 		_ = inventory
 		// figure out which has updated
 		// update inventory map
@@ -51,6 +76,7 @@ func (p *Proxy) processUpdate(inventory map[string]Service) (new []*Service) {
 		// check for services we don't have and add them
 		_, ok := p.inventory[key]
 		if !ok {
+			logrus.Info("adding proxy for ", key)
 			svc := service
 			new = append(new, &svc)
 			// add an entirely new service
@@ -61,6 +87,7 @@ func (p *Proxy) processUpdate(inventory map[string]Service) (new []*Service) {
 				logrus.Error(err)
 				continue
 			}
+			logrus.Info(proxySocket, err)
 			go proxySocket.ProxyLoop(&svc)
 			p.inventory[key] = &svc
 			p.proxies[key] = proxySocket

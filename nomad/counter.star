@@ -19,10 +19,10 @@ dashboard = service(
             "dashboard",
             image="hashicorpnomad/counter-dashboard:v1",
             cpu=500,
-            memory=256,
+            memory=255,
             ports=[9002],
             connect_to=["counter.counter:9001"],
-            environment={"COUNTING_SERVICE_URL": "counter.counter:9001"},
+            environment={"COUNTIG_SERVICE_URL": "counter.counter:9001"},
         )
     ],
 )

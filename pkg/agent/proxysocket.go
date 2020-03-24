@@ -30,7 +30,7 @@ type ProxySocket interface {
 	ListenPort() int
 }
 
-var _ ProxySocketGen = &defaultProxySocketGen{}
+var DefaultProxySocketGen ProxySocketGen = &defaultProxySocketGen{}
 
 type defaultProxySocketGen struct {
 }
@@ -40,7 +40,6 @@ func (dpsg *defaultProxySocketGen) NewProxySocket(protocol string, ip net.IP, po
 	if ip != nil {
 		host = ip.String()
 	}
-
 	switch strings.ToUpper(string(protocol)) {
 	case "TCP":
 		listener, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(port)))
@@ -106,6 +105,7 @@ func TryConnectEndpoints(service *Service, srcAddr net.Addr, protocol string) (o
 }
 
 func (tcp *tcpProxySocket) ProxyLoop(service *Service) {
+	logrus.Info("new tcp listener on ", tcp.Addr().String(), " for service ", service.Name())
 	for {
 		if !service.alive {
 			// The service port was closed or replaced.
