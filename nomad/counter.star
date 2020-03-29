@@ -19,7 +19,7 @@ dashboard = service(
             "dashboard",
             image="hashicorpnomad/counter-dashboard:v1",
             cpu=500,
-            memory=255,
+            memory=250,
             ports=[9002],
             connect_to=["counter.counter:9001"],
             environment={"COUNTIG_SERVICE_URL": "counter.counter:9001"},
@@ -35,7 +35,7 @@ standalone = service(
             "counter",
             image="hashicorpnomad/counter-api:v1",
             cpu=500,
-            memory=256,
+            memory=252,
             ports=[9001],
         ),
         container(

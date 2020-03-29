@@ -1,8 +1,6 @@
 package agent
 
 import (
-	"crypto/sha256"
-	"encoding/binary"
 	"fmt"
 	"strings"
 
@@ -23,11 +21,13 @@ type defaultIPTables struct {
 	ipt *iptables.IPTables
 }
 
-func NewIPTables(execInterface exec.Interface) (IPTables, error) {
-	var err error
-	ipt := &defaultIPTables{}
-	ipt.ipt, err = iptables.NewWithProtocol(iptables.ProtocolIPv4, execInterface)
-	return ipt, err
+func NewIPTables(execInterface exec.Interface) func() (IPTables, error) {
+	return func() (IPTables, error) {
+		var err error
+		ipt := &defaultIPTables{}
+		ipt.ipt, err = iptables.NewWithProtocol(iptables.ProtocolIPv4, execInterface)
+		return ipt, err
+	}
 }
 
 var (
@@ -63,19 +63,10 @@ func (ipt *defaultIPTables) DeleteChains() (err error) {
 }
 
 type ProxyRule struct {
-	proxyIP         string
-	containerIP     string
-	requestedPort   int
-	destinationPort int
-}
-
-func (pr ProxyRule) hash() string {
-	hash := sha256.New()
-	_, _ = hash.Write([]byte(pr.proxyIP))
-	_, _ = hash.Write([]byte(pr.containerIP))
-	_ = binary.Write(hash, binary.LittleEndian, int32(pr.requestedPort))
-	_ = binary.Write(hash, binary.LittleEndian, int32(pr.destinationPort))
-	return fmt.Sprintf("%x", hash.Sum(nil))
+	proxyIP       string
+	containerIP   string
+	proxyPort     int
+	containerPort int
 }
 
 func (pr ProxyRule) preroutingArgs() []string {
@@ -84,9 +75,9 @@ func (pr ProxyRule) preroutingArgs() []string {
 		"--protocol", "tcp",
 		"--destination", pr.proxyIP,
 		"--source", pr.containerIP,
-		"--dport", fmt.Sprint(pr.requestedPort),
+		"--dport", fmt.Sprint(pr.proxyPort),
 		"--jump", "DNAT",
-		"--to-destination", fmt.Sprintf("%s:%d", pr.proxyIP, pr.destinationPort),
+		"--to-destination", fmt.Sprintf("%s:%d", pr.proxyIP, pr.containerPort),
 	}
 }
 

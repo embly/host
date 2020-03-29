@@ -12,10 +12,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type ProxySocketGen interface {
-	NewProxySocket(protocol string, ip net.IP, port int) (ProxySocket, error)
-}
-
 // Abstraction over TCP/UDP sockets which are proxied.
 type ProxySocket interface {
 	// Addr gets the net.Addr for a ProxySocket.
@@ -30,12 +26,7 @@ type ProxySocket interface {
 	ListenPort() int
 }
 
-var DefaultProxySocketGen ProxySocketGen = &defaultProxySocketGen{}
-
-type defaultProxySocketGen struct {
-}
-
-func (dpsg *defaultProxySocketGen) NewProxySocket(protocol string, ip net.IP, port int) (ProxySocket, error) {
+func NewProxySocket(protocol string, ip net.IP, port int) (ProxySocket, error) {
 	host := ""
 	if ip != nil {
 		host = ip.String()

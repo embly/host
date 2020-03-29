@@ -21,7 +21,7 @@ require (
 	github.com/maxmcd/tester v0.0.0-20200315004439-02c29039e2ff
 	github.com/miekg/dns v1.1.29
 	github.com/pkg/errors v0.9.1
-	github.com/sirupsen/logrus v1.4.1
+	github.com/sirupsen/logrus v1.5.0
 	go.starlark.net v0.0.0-20200306205701-8dd3e2ee1dd5
 	golang.org/x/crypto v0.0.0-20200302210943-78000ba7a073 // indirect
 	golang.org/x/net v0.0.0-20191004110552-13f9640d40b9 // indirect

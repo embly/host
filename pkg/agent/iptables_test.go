@@ -15,7 +15,7 @@ import (
 )
 
 type fakeIPTables struct {
-	rules map[string]ProxyRule
+	rules map[ProxyRule]struct{}
 }
 
 func (ipt *fakeIPTables) CreateChains() (err error) { return nil }
@@ -24,16 +24,22 @@ func (ipt *fakeIPTables) GetRules() (stats []iptables.Stat, err error) {
 	panic("unimplemented")
 }
 func (ipt *fakeIPTables) AddProxyRule(pr ProxyRule) (err error) {
-	ipt.rules[pr.hash()] = pr
+	ipt.rules[pr] = struct{}{}
 	return nil
 }
 func (ipt *fakeIPTables) RuleExists(pr ProxyRule) (exists bool, err error) {
-	_, exists = ipt.rules[pr.hash()]
+	_, exists = ipt.rules[pr]
 	return
 }
 func (ipt *fakeIPTables) DeleteProxyRule(pr ProxyRule) (err error) {
-	delete(ipt.rules, pr.hash())
+	delete(ipt.rules, pr)
 	return
+}
+
+func newFakeIptables() (IPTables, error) {
+	return &fakeIPTables{
+		rules: map[ProxyRule]struct{}{},
+	}, nil
 }
 
 func shouldWeTestLocalIPTables(t tester.Tester) {
@@ -50,7 +56,7 @@ func shouldWeTestLocalIPTables(t tester.Tester) {
 func TestBasic(te *testing.T) {
 	t := tester.New(te)
 	shouldWeTestLocalIPTables(t)
-	ipt, err := NewIPTables(exec.New())
+	ipt, err := NewIPTables(exec.New())()
 	t.PanicOnErr(err)
 
 	t.Print(ipt)
@@ -58,10 +64,10 @@ func TestBasic(te *testing.T) {
 	t.PanicOnErr(err)
 
 	pr := ProxyRule{
-		proxyIP:         "1.2.3.4",
-		containerIP:     "2.3.4.5",
-		requestedPort:   20201,
-		destinationPort: 20202,
+		proxyIP:       "1.2.3.4",
+		containerIP:   "2.3.4.5",
+		proxyPort:     20201,
+		containerPort: 20202,
 	}
 	err = ipt.AddProxyRule(pr)
 	t.PanicOnErr(err)
@@ -75,16 +81,16 @@ func TestBasicRedirect(te *testing.T) {
 	t := tester.New(te)
 	shouldWeTestLocalIPTables(t)
 
-	ipt, err := NewIPTables(exec.New())
+	ipt, err := NewIPTables(exec.New())()
 	t.PanicOnErr(err)
 
 	t.PanicOnErr(ipt.CreateChains())
 
 	pr := ProxyRule{
-		proxyIP:         "192.168.86.30",
-		containerIP:     "172.17.0.2",
-		requestedPort:   80,
-		destinationPort: 8084,
+		proxyIP:       "192.168.86.30",
+		containerIP:   "172.17.0.2",
+		proxyPort:     80,
+		containerPort: 8084,
 	}
 	t.PanicOnErr(ipt.AddProxyRule(pr))
 
@@ -130,16 +136,16 @@ func TestBasicRedirectWithinDocker(te *testing.T) {
 	cont, err := newDockerIptables()
 	defer func() { _ = cont.Delete() }()
 	t.PanicOnErr(err)
-	ipt, err := NewIPTables(docktest.NewExecInterface(cont))
+	ipt, err := NewIPTables(docktest.NewExecInterface(cont))()
 	t.PanicOnErr(err)
 
 	t.PanicOnErr(ipt.CreateChains())
 
 	pr := ProxyRule{
-		proxyIP:         "192.168.86.30",
-		containerIP:     "172.17.0.2",
-		requestedPort:   80,
-		destinationPort: 8084,
+		proxyIP:       "192.168.86.30",
+		containerIP:   "172.17.0.2",
+		proxyPort:     80,
+		containerPort: 8084,
 	}
 	t.PanicOnErr(ipt.AddProxyRule(pr))
 
@@ -207,16 +213,16 @@ func TestFull(te *testing.T) {
 	_, _, err = contCurl.Exec([]string{"curl", fmt.Sprintf("%s:8084", contServer.NetworkSettings.IPAddress)})
 	t.PanicOnErr(err)
 
-	ipt, err := NewIPTables(docktest.NewExecInterface(contIPTables))
+	ipt, err := NewIPTables(docktest.NewExecInterface(contIPTables))()
 	t.PanicOnErr(err)
 
 	t.PanicOnErr(ipt.CreateChains())
 
 	pr := ProxyRule{
-		proxyIP:         contServer.NetworkSettings.IPAddress,
-		containerIP:     contCurl.NetworkSettings.IPAddress,
-		requestedPort:   8032,
-		destinationPort: 8084,
+		proxyIP:       contServer.NetworkSettings.IPAddress,
+		containerIP:   contCurl.NetworkSettings.IPAddress,
+		proxyPort:     8032,
+		containerPort: 8084,
 	}
 	t.PanicOnErr(ipt.AddProxyRule(pr))
 

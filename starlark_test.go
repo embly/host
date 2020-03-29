@@ -34,7 +34,7 @@ counter = service(
 			environment={"FOO":"BAR"},
 			ports=[9002, "9002/udp"],
 		)
-	],
+	]
 )
 
 load_balancer("all", routes={

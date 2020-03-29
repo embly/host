@@ -21,7 +21,7 @@ func newFakeConsulClient() *fakeConsulClient {
 		services:       map[string][]string{},
 		catalogService: map[string][]*consul.CatalogService{},
 		cond:           sync.Cond{L: &sync.Mutex{}},
-		index:          1,
+		index:          0,
 	}
 }
 
@@ -44,9 +44,15 @@ func (fcc *fakeConsulClient) deleteService(name string) {
 }
 
 func (fcc *fakeConsulClient) Services(q *consul.QueryOptions) (map[string][]string, *consul.QueryMeta, error) {
+	fcc.cond.L.Lock()
+	if len(fcc.services) > 0 && fcc.index == 0 {
+		fcc.index = 1
+	}
+	fcc.cond.L.Unlock()
+
 	for {
 		fcc.cond.L.Lock()
-		if q.WaitIndex < fcc.index {
+		if q.WaitIndex < fcc.index && fcc.index != 0 {
 			fcc.cond.L.Unlock()
 			return fcc.services, &consul.QueryMeta{LastIndex: fcc.index}, nil
 		}

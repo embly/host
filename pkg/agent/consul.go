@@ -27,25 +27,32 @@ func (s *Service) Name() string {
 	return fmt.Sprintf("%s:%d", s.hostname, s.port)
 }
 
-func (s *Service) processUpdate(inventory map[string]Task) {
+func (s *Service) processUpdate(inventory map[string]Task) (deleted map[string]Task, added map[string]Task) {
 	// check for new tasks we don't have and add them
+	deleted = map[string]Task{}
+	added = map[string]Task{}
+
 	s.lock.Lock()
 	for key, task := range inventory {
 		if _, ok := s.inventory[key]; !ok {
 			s.inventory[key] = task
+			added[key] = task
 		}
 	}
 
 	// check for tasks that no longer exist and remove them
 	for key := range s.inventory {
-		if _, ok := inventory[key]; !ok {
+		if task, ok := inventory[key]; !ok {
+			deleted[key] = task
 			delete(s.inventory, key)
 		}
 	}
 	s.lock.Unlock()
+	return
 }
 
 func (s *Service) NextTask() (task Task, err error) {
+	// random task
 	for _, task := range s.inventory {
 		return task, nil
 	}
@@ -99,13 +106,14 @@ func (c *defaultConsulData) Updates(ch chan map[string]Service) {
 		q = &consul.QueryOptions{RequireConsistent: true, WaitIndex: lastIndex}
 		serviceTags, meta, err := c.cc.Services(q)
 		if err != nil {
+			// TODO: what if we can never reconnect?
 			logrus.Error(err)
 			time.Sleep(time.Second)
 			continue
 		}
 		serviceTags = filterServices(serviceTags)
-		ch <- c.getInventory(serviceTags)
 		lastIndex = meta.LastIndex
+		ch <- c.getInventory(serviceTags)
 	}
 }
 

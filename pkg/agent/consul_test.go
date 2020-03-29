@@ -16,9 +16,9 @@ func randomPort() int {
 	return rand.Intn(max-min) + min
 }
 
-func newServiceData(name string, hostname string, port int, protocol string, count int) (string, []string, []*consul.CatalogService) {
+func newServiceData(name string, hostname string, protocol string, count int) (string, []string, []*consul.CatalogService) {
 	tags := []string{
-		fmt.Sprintf("dns-name=%s:%d", hostname, port),
+		fmt.Sprintf("dns-name=%s:%d", hostname, 8080),
 		fmt.Sprintf("protocol=%s", protocol),
 	}
 
@@ -36,7 +36,7 @@ func newServiceData(name string, hostname string, port int, protocol string, cou
 			Node:    "f0ca171f3b88",
 			Address: "127.0.0.1",
 			// this is not how consul creates the serviceID, but we just need them to be unique per CatalogService
-			ServiceID:      fmt.Sprintf("_nomad-task-%s-dashboard-%s-%d", id, name, port),
+			ServiceID:      fmt.Sprintf("_nomad-task-%s-dashboard-%s-%d", id, name, 8080),
 			ServiceName:    name,
 			ServiceAddress: "127.0.0.1",
 			ServiceTags:    tags,
@@ -46,15 +46,25 @@ func newServiceData(name string, hostname string, port int, protocol string, cou
 	return name, tags, css
 }
 
+func newFakeConsulData() (fcc *fakeConsulClient, newConsulData func() (ConsulData, error)) {
+	fcc = newFakeConsulClient()
+	newConsulData = func() (cd ConsulData, err error) {
+		cd = &defaultConsulData{
+			cc: fcc,
+		}
+		return cd, err
+	}
+	return
+}
+
 func TestFakeClient(te *testing.T) {
 	t := tester.New(te)
 
 	_, _ = NewConsulData()
 
-	fcc := newFakeConsulClient()
-	cd := &defaultConsulData{
-		cc: fcc,
-	}
+	fcc, newConsulData := newFakeConsulData()
+	cd, err := newConsulData()
+	t.PanicOnErr(err)
 
 	fcc.services = map[string][]string{
 		"44959340f59d497f95b667902990da5f": []string{"dns-name=dashboard.standalone2:9002", "protocol=tcp"},

@@ -1,34 +1,45 @@
 package agent
 
 import (
-	"sync"
+	"net"
 	"testing"
 
+	docker "github.com/fsouza/go-dockerclient"
 	"github.com/maxmcd/tester"
+	"github.com/sirupsen/logrus"
 )
 
+func TestNewProxy(te *testing.T) {
+	t := tester.New(te)
+	fcc, newConsulData := newFakeConsulData()
+
+	testProxy, err := NewProxy(net.IPv4(127, 0, 0, 1),
+		noopNewProxySocket,
+		newConsulData,
+		newFakeIptables,
+		newFakeDocker,
+	)
+	t.PanicOnErr(err)
+	_, _ = testProxy, fcc
+}
 func TestProxyBasic(te *testing.T) {
 	t := tester.New(te)
 
-	fcc := newFakeConsulClient()
-	cd := &defaultConsulData{
-		cc: fcc,
-	}
+	fcc, newConsulData := newFakeConsulData()
 
-	testProxy := &Proxy{
-		proxyGenerator: &noopProxySocketGen{},
-		cd:             cd,
-		cond:           sync.Cond{L: &sync.Mutex{}},
-	}
+	testProxy, err := newProxy(net.IPv4(127, 0, 0, 1),
+		noopNewProxySocket,
+		newConsulData,
+		newFakeIptables,
+		newFakeDocker,
+	)
+	t.PanicOnErr(err)
 
-	go testProxy.Start()
-
-	fcc.pushUpdate(newServiceData("thing", "foo.bar", 8080, "tcp", 1))
-	testProxy.wait()
+	fcc.pushUpdate(newServiceData("thing", "foo.bar", "tcp", 1))
+	_ = testProxy.Tick()
 	var oldService *Service
 	var oldProxy ProxySocket
 	{
-		testProxy.lock.Lock()
 		service, ok := testProxy.inventory["foo.bar:8080"]
 		oldService = service
 		t.Assert().True(ok)
@@ -38,39 +49,193 @@ func TestProxyBasic(te *testing.T) {
 		proxy, ok := testProxy.proxies["foo.bar:8080"]
 		t.Assert().True(ok)
 		oldProxy = proxy
-		testProxy.lock.Unlock()
 	}
 	t.Assert().True(oldService.alive)
 
-	fcc.pushUpdate(newServiceData("thing", "foo.bar", 8080, "tcp", 2))
-	testProxy.wait()
+	fcc.pushUpdate(newServiceData("thing", "foo.bar", "tcp", 2))
+	_ = testProxy.Tick()
 
 	{
-		testProxy.lock.Lock()
 		service, ok := testProxy.inventory["foo.bar:8080"]
 		t.Assert().True(ok)
 		t.Assert().Equal(service.hostname, "foo.bar")
 		t.Assert().Equal(service.port, 8080)
 		t.Assert().Equal(len(service.inventory), 2)
-		testProxy.lock.Unlock()
 	}
 
-	fcc.pushUpdate(newServiceData("otherthing", "foo.baz", 8080, "tcp", 1))
-	testProxy.wait()
+	fcc.pushUpdate(newServiceData("otherthing", "foo.baz", "tcp", 1))
+	_ = testProxy.Tick()
 
 	{
-		testProxy.lock.Lock()
 		t.Assert().Equal(2, len(testProxy.inventory))
-		testProxy.lock.Unlock()
 	}
 
 	fcc.deleteService("thing")
-	testProxy.wait()
-	testProxy.lock.Lock()
+	_ = testProxy.Tick()
 	t.Assert().False(oldService.alive)
 	{
 		t.Assert().Equal(1, len(testProxy.inventory))
 	}
 	t.Assert().True(oldProxy.(*noopProxySocket).closed)
-	testProxy.lock.Unlock()
+}
+
+func TestProxyDockerAndConsulEvents(te *testing.T) {
+	logrus.SetReportCaller(true)
+	t := tester.New(te)
+	fcc, newConsulData := newFakeConsulData()
+
+	testProxy, err := newProxy(net.IPv4(127, 0, 0, 1),
+		noopNewProxySocket,
+		newConsulData,
+		newFakeIptables,
+		newFakeDocker,
+	)
+	t.PanicOnErr(err)
+
+	fd := testProxy.docker.(*fakeDocker)
+	fipt := testProxy.ipt.(*fakeIPTables)
+	_, _, _ = fd, fipt, fcc
+
+	containerIPAddress := "1.2.3.4"
+	dockerID := "foo"
+	var allocID string
+	{
+		// create one consul service and send the event
+		name, tags, css := newServiceData("thing", "foo.bar", "tcp", 1)
+		fcc.pushUpdate(name, tags, css)
+		allocID = parseAllocIDFromServiceID(css[0].ServiceID)
+		_ = testProxy.Tick()
+	}
+	{
+		// send the event for that docker container starting
+		fd.containers[dockerID] = docker.Container{
+			ID: dockerID,
+			NetworkSettings: &docker.NetworkSettings{
+				IPAddress: containerIPAddress,
+			},
+		}
+		fd.listener <- &docker.APIEvents{
+			Action: "start",
+			Type:   "container",
+			Actor: docker.APIActor{
+				Attributes: map[string]string{
+					NomadAllocKey: allocID,
+				},
+				ID: dockerID,
+			},
+		}
+		_ = testProxy.Tick()
+		pr, ok := testProxy.rules[allocID]
+		t.Assert().True(ok)
+		t.Assert().Equal(containerIPAddress, pr.containerIP)
+		_, ok = fipt.rules[pr]
+		t.Assert().True(ok)
+	}
+	{
+		// stop the container, ensure the proxyRule is cleared
+		fd.listener <- &docker.APIEvents{
+			Action: "stop",
+			Type:   "container",
+			Actor: docker.APIActor{
+				Attributes: map[string]string{
+					NomadAllocKey: allocID,
+				},
+				ID: dockerID,
+			},
+		}
+		_ = testProxy.Tick()
+		_, ok := testProxy.rules[allocID]
+		t.Assert().False(ok)
+	}
+	{
+		// delete service, ensure all state is deleted
+		fcc.deleteService("thing")
+		_ = testProxy.Tick()
+		t.Assert().Len(testProxy.inventory, 0)
+		t.Assert().Len(testProxy.allocInventoryReference, 0)
+		t.Assert().Len(testProxy.proxies, 0)
+		t.Assert().Len(testProxy.containerAllocs, 0)
+		t.Assert().Len(testProxy.rules, 0)
+	}
+}
+
+func TestProxyDockerAndConsulEventsOutOfOrder(te *testing.T) {
+	logrus.SetReportCaller(true)
+	t := tester.New(te)
+	fcc, newConsulData := newFakeConsulData()
+
+	testProxy, err := newProxy(net.IPv4(127, 0, 0, 1),
+		noopNewProxySocket,
+		newConsulData,
+		newFakeIptables,
+		newFakeDocker,
+	)
+	t.PanicOnErr(err)
+
+	fd := testProxy.docker.(*fakeDocker)
+	fipt := testProxy.ipt.(*fakeIPTables)
+	_, _, _ = fd, fipt, fcc
+
+	containerIPAddress := "1.2.3.4"
+	dockerID := "foo"
+	var allocID string
+	{
+		name, tags, css := newServiceData("thing", "foo.bar", "tcp", 1)
+		_, _, _ = name, tags, css
+		allocID = parseAllocIDFromServiceID(css[0].ServiceID)
+		fd.containers[dockerID] = docker.Container{
+			ID: dockerID,
+			NetworkSettings: &docker.NetworkSettings{
+				IPAddress: containerIPAddress,
+			},
+		}
+		fd.listener <- &docker.APIEvents{
+			Action: "start",
+			Type:   "container",
+			Actor: docker.APIActor{
+				Attributes: map[string]string{
+					NomadAllocKey: allocID,
+				},
+				ID: dockerID,
+			},
+		}
+		_ = testProxy.Tick()
+		fcc.pushUpdate(name, tags, css)
+		_ = testProxy.Tick()
+		pr, ok := testProxy.rules[allocID]
+		t.Assert().True(ok)
+		t.Assert().Equal(containerIPAddress, pr.containerIP)
+		_, ok = fipt.rules[pr]
+		t.Assert().True(ok)
+	}
+	{
+		// delete service, ensure all state is deleted
+		fcc.deleteService("thing")
+		_ = testProxy.Tick()
+		t.Assert().Len(testProxy.inventory, 0)
+		t.Assert().Len(testProxy.allocInventoryReference, 0)
+		t.Assert().Len(testProxy.proxies, 0)
+		t.Assert().Len(testProxy.containerAllocs, 1)
+		t.Assert().Len(testProxy.rules, 1)
+	}
+
+	{
+		// stop the container, ensure the proxyRule is cleared
+		fd.listener <- &docker.APIEvents{
+			Action: "stop",
+			Type:   "container",
+			Actor: docker.APIActor{
+				Attributes: map[string]string{
+					NomadAllocKey: allocID,
+				},
+				ID: dockerID,
+			},
+		}
+		_ = testProxy.Tick()
+		t.Assert().Len(testProxy.inventory, 0)
+		t.Assert().Len(testProxy.allocInventoryReference, 0)
+		t.Assert().Len(testProxy.proxies, 0)
+		t.Assert().Len(testProxy.containerAllocs, 0)
+		t.Assert().Len(testProxy.rules, 0)
+	}
 }

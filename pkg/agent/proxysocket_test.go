@@ -1,10 +1,8 @@
 package agent
 
 import (
-	"fmt"
 	"io"
 	"net"
-	"sync"
 	"testing"
 
 	"github.com/maxmcd/tester"
@@ -21,12 +19,7 @@ func (ps *noopProxySocket) Close() error               { ps.closed = true; retur
 func (ps *noopProxySocket) ProxyLoop(service *Service) {}
 func (ps *noopProxySocket) ListenPort() int            { return 0 }
 
-type noopProxySocketGen struct {
-}
-
-var _ ProxySocketGen = &noopProxySocketGen{}
-
-func (gen *noopProxySocketGen) NewProxySocket(protocol string, ip net.IP, port int) (ProxySocket, error) {
+func noopNewProxySocket(protocol string, ip net.IP, port int) (ProxySocket, error) {
 	return &noopProxySocket{}, nil
 }
 
@@ -44,7 +37,7 @@ func echoTCPServer(port int) {
 			if err != nil {
 				panic(err)
 			}
-			go func() { _, err = io.Copy(conn, conn); fmt.Println("SGHKDSDGJK", err) }()
+			go func() { _, err = io.Copy(conn, conn) }()
 		}
 	}()
 }
@@ -52,29 +45,23 @@ func echoTCPServer(port int) {
 func TestProxySocketBasic(te *testing.T) {
 	t := tester.New(te)
 
-	fcc := newFakeConsulClient()
-	cd := &defaultConsulData{
-		cc: fcc,
-	}
-
-	testProxy := &Proxy{
-		proxyGenerator: &defaultProxySocketGen{},
-		cd:             cd,
-		ip:             net.IPv4(127, 0, 0, 1),
-		cond:           sync.Cond{L: &sync.Mutex{}},
-	}
-	go testProxy.Start()
+	fcc, newConsulData := newFakeConsulData()
+	testProxy, err := newProxy(net.IPv4(127, 0, 0, 1),
+		NewProxySocket,
+		newConsulData,
+		newFakeIptables,
+		newFakeDocker,
+	)
+	t.PanicOnErr(err)
 	port := GetFreePort()
-	name, args, catalog := newServiceData("thing", "foo.bar", 8080, "tcp", 1)
+	name, args, catalog := newServiceData("thing", "foo.bar", "tcp", 1)
 	catalog[0].ServicePort = port
-	fmt.Println(port)
 	echoTCPServer(port)
 
 	fcc.pushUpdate(name, args, catalog)
-	testProxy.wait()
-
-	testProxy.lock.Lock()
+	_ = testProxy.Tick()
 	var proxySocket ProxySocket
+	t.Assert().Len(testProxy.proxies, 1)
 	for _, ps := range testProxy.proxies {
 		proxySocket = ps
 		break
@@ -92,7 +79,6 @@ func TestProxySocketBasic(te *testing.T) {
 		t.PanicOnErr(err)
 		t.Assert().Equal(msg, out)
 	}
-	testProxy.lock.Unlock()
 }
 
 func echoUDPServer(port int) {
@@ -121,28 +107,23 @@ func echoUDPServer(port int) {
 func TestProxySocketUDPBasic(te *testing.T) {
 	t := tester.New(te)
 
-	fcc := newFakeConsulClient()
-	cd := &defaultConsulData{
-		cc: fcc,
-	}
+	fcc, newConsulData := newFakeConsulData()
+	testProxy, err := newProxy(net.IPv4(127, 0, 0, 1),
+		NewProxySocket,
+		newConsulData,
+		newFakeIptables,
+		newFakeDocker,
+	)
+	t.PanicOnErr(err)
 
-	testProxy := &Proxy{
-		proxyGenerator: &defaultProxySocketGen{},
-		cd:             cd,
-		ip:             net.IPv4(127, 0, 0, 1),
-		cond:           sync.Cond{L: &sync.Mutex{}},
-	}
-	go testProxy.Start()
 	port := GetFreePort()
-	name, args, catalog := newServiceData("thing", "foo.bar", 8080, "udp", 1)
+	name, args, catalog := newServiceData("thing", "foo.bar", "udp", 1)
 	catalog[0].ServicePort = port
-	fmt.Println(port)
 	echoUDPServer(port)
 
 	fcc.pushUpdate(name, args, catalog)
-	testProxy.wait()
+	_ = testProxy.Tick()
 
-	testProxy.lock.Lock()
 	var proxySocket ProxySocket
 	for _, ps := range testProxy.proxies {
 		proxySocket = ps
@@ -160,5 +141,4 @@ func TestProxySocketUDPBasic(te *testing.T) {
 		t.PanicOnErr(err)
 		t.Assert().Equal(msg, out)
 	}
-	testProxy.lock.Unlock()
 }
