@@ -40,7 +40,7 @@ func TestProxyBasic(te *testing.T) {
 	var oldService *Service
 	var oldProxy ProxySocket
 	{
-		service, ok := testProxy.inventory["foo.bar:8080"]
+		service, ok := testProxy.services["foo.bar:8080"]
 		oldService = service
 		t.Assert().True(ok)
 		t.Assert().Equal(service.hostname, "foo.bar")
@@ -56,7 +56,7 @@ func TestProxyBasic(te *testing.T) {
 	_ = testProxy.Tick()
 
 	{
-		service, ok := testProxy.inventory["foo.bar:8080"]
+		service, ok := testProxy.services["foo.bar:8080"]
 		t.Assert().True(ok)
 		t.Assert().Equal(service.hostname, "foo.bar")
 		t.Assert().Equal(service.port, 8080)
@@ -67,14 +67,14 @@ func TestProxyBasic(te *testing.T) {
 	_ = testProxy.Tick()
 
 	{
-		t.Assert().Equal(2, len(testProxy.inventory))
+		t.Assert().Equal(2, len(testProxy.services))
 	}
 
 	fcc.deleteService("thing")
 	_ = testProxy.Tick()
 	t.Assert().False(oldService.alive)
 	{
-		t.Assert().Equal(1, len(testProxy.inventory))
+		t.Assert().Equal(1, len(testProxy.services))
 	}
 	t.Assert().True(oldProxy.(*noopProxySocket).closed)
 }
@@ -151,7 +151,7 @@ func TestProxyDockerAndConsulEvents(te *testing.T) {
 		// delete service, ensure all state is deleted
 		fcc.deleteService("thing")
 		_ = testProxy.Tick()
-		t.Assert().Len(testProxy.inventory, 0)
+		t.Assert().Len(testProxy.services, 0)
 		t.Assert().Len(testProxy.allocInventoryReference, 0)
 		t.Assert().Len(testProxy.proxies, 0)
 		t.Assert().Len(testProxy.containerAllocs, 0)
@@ -212,7 +212,7 @@ func TestProxyDockerAndConsulEventsOutOfOrder(te *testing.T) {
 		// delete service, ensure all state is deleted
 		fcc.deleteService("thing")
 		_ = testProxy.Tick()
-		t.Assert().Len(testProxy.inventory, 0)
+		t.Assert().Len(testProxy.services, 0)
 		t.Assert().Len(testProxy.allocInventoryReference, 0)
 		t.Assert().Len(testProxy.proxies, 0)
 		t.Assert().Len(testProxy.containerAllocs, 1)
@@ -232,7 +232,7 @@ func TestProxyDockerAndConsulEventsOutOfOrder(te *testing.T) {
 			},
 		}
 		_ = testProxy.Tick()
-		t.Assert().Len(testProxy.inventory, 0)
+		t.Assert().Len(testProxy.services, 0)
 		t.Assert().Len(testProxy.allocInventoryReference, 0)
 		t.Assert().Len(testProxy.proxies, 0)
 		t.Assert().Len(testProxy.containerAllocs, 0)

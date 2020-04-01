@@ -15,14 +15,17 @@ type Proxy struct {
 	cd     ConsulData
 	docker Docker
 
-	listener    chan *docker.APIEvents
-	updatesChan chan map[string]Service
+	listener      chan *docker.APIEvents
+	consulUpdates chan ConsulInventory
 
 	ipt            IPTables
 	newProxySocket func(string, net.IP, int) (ProxySocket, error)
 
-	// inventory stores services, keyed by the hostname the service is addressed by
-	inventory map[string]*Service
+	// services stores services, keyed by the hostname the service is addressed by
+	services map[string]*Service
+
+	// connectRequests stores all global requests to connect to another service
+	connectRequests map[string]ConnectTo
 
 	// allocInventoryReference stores a map of allocID to "{service_hostname:port}.{task_id}"
 	allocInventoryReference map[string]addressAndTaskID
@@ -71,13 +74,13 @@ func newProxy(ip net.IP,
 	p.ip = ip
 	p.newProxySocket = newProxySocket
 
-	p.inventory = map[string]*Service{}
+	p.services = map[string]*Service{}
 	p.proxies = map[string]ProxySocket{}
 	p.rules = map[string]ProxyRule{}
 	p.containerAllocs = map[string]container{}
 	p.allocInventoryReference = map[string]addressAndTaskID{}
 
-	p.updatesChan = make(chan map[string]Service, 2)
+	p.consulUpdates = make(chan ConsulInventory, 2)
 	p.listener = make(chan *docker.APIEvents, 2)
 
 	if p.cd, err = newConsulData(); err != nil {
@@ -95,11 +98,14 @@ func newProxy(ip net.IP,
 	if p.ipt, err = newIPTables(); err != nil {
 		return
 	}
+	if err = p.ipt.DeleteChains(); err != nil {
+		return
+	}
 	if err = p.ipt.CreateChains(); err != nil {
 		return
 	}
 
-	go p.cd.Updates(p.updatesChan)
+	go p.cd.Updates(p.consulUpdates)
 	return
 }
 
@@ -113,9 +119,9 @@ func (p *Proxy) Tick() (err error) {
 	select {
 	case event := <-p.listener:
 		return p.processDockerUpdate(event)
-	case inventory := <-p.updatesChan:
-		err, _ = p.processConsulUpdate(inventory)
-		return err
+	case inventory := <-p.consulUpdates:
+		p.processConsulUpdate(inventory)
+		return nil
 	}
 }
 
@@ -150,7 +156,7 @@ func (p *Proxy) processDockerUpdate(event *docker.APIEvents) (err error) {
 		// then we have everything we need, create the alloc
 		if aandtID, ok := p.allocInventoryReference[allocID]; ok {
 			proxySocket := p.proxies[aandtID.address]
-			task := p.inventory[aandtID.address].inventory[aandtID.taskID]
+			task := p.services[aandtID.address].inventory[aandtID.taskID]
 			if err = p.setUpProxyRule(allocID, cont.NetworkSettings.IPAddress, task.port, proxySocket); err != nil {
 				logrus.Error(errors.Wrap(err, "couldn't set up proxy rule in docker listener"))
 			}
@@ -181,16 +187,15 @@ type addressAndTaskID struct {
 	taskID  string
 }
 
-func (p *Proxy) processConsulUpdate(inventory map[string]Service) (err error, new []*Service) {
-	newTasks := map[string]map[string]Task{}
+func (p *Proxy) processConsulUpdate(inventory ConsulInventory) {
+	// newTasks := map[string]map[string]Task{}
 
-	for key, service := range inventory {
+	for key, service := range inventory.services {
 		// check for services we don't have and add them
-		_, ok := p.inventory[key]
+		_, ok := p.services[key]
 		if !ok {
 			logrus.Info("adding proxy for ", key)
 			svc := service
-			new = append(new, &svc)
 			// add an entirely new service
 			proxySocket, err := p.newProxySocket(svc.protocol, p.ip, 0)
 			if err != nil {
@@ -200,53 +205,47 @@ func (p *Proxy) processConsulUpdate(inventory map[string]Service) (err error, ne
 				continue
 			}
 			go proxySocket.ProxyLoop(&svc)
-			p.inventory[key] = &svc
+			p.services[key] = &svc
 			p.proxies[key] = proxySocket
-
-			newTasks[key] = svc.inventory
-			// TODO: add new proxy here as well
 		} else {
 			// update the task list on an existing service
-			added, deleted := p.inventory[key].processUpdate(service.inventory)
-			newTasks[key] = added
-			for _, task := range deleted {
-				delete(p.allocInventoryReference, task.allocID)
-			}
+			added, deleted := p.services[key].processUpdate(service.inventory)
+			_, _ = added, deleted
 		}
 	}
 
 	// check for services we no longer have and shut them down
-	for key := range p.inventory {
-		if _, ok := inventory[key]; !ok {
+	for key := range p.services {
+		if _, ok := inventory.services[key]; !ok {
 			// marking it as dead will stop new requests
 			// drop the proxy from the map and it will eventually exit
-			p.inventory[key].alive = false
+			p.services[key].alive = false
 			p.proxies[key].Close()
-			for _, task := range p.inventory[key].inventory {
-				delete(p.allocInventoryReference, task.allocID)
-			}
-			delete(p.inventory, key)
+			delete(p.services, key)
 			delete(p.proxies, key)
 		}
 	}
 
-	for key, tasks := range newTasks {
-		for id, task := range tasks {
-			cont, haveAlloc := p.containerAllocs[task.allocID]
-			_, haveProxyRule := p.rules[task.allocID]
+	for key, connectTo := range p.connectRequests {
+		if _, ok := p.connectRequests[key]; !ok {
+			p.connectRequests[key] = connectTo
+			cont, haveAlloc := p.containerAllocs[connectTo.allocID]
+			_, haveProxyRule := p.rules[connectTo.allocID]
 			if haveAlloc && !haveProxyRule {
-				proxySocket := p.proxies[key]
-				if err := p.setUpProxyRule(task.allocID, cont.ip, task.port, proxySocket); err != nil {
-					logrus.Error(errors.Wrap(err, "couldn't set up proxy rule in consul listener"))
-				}
+				_ = cont
+				// TODO: set it up
+				// proxySocket := p.proxies[key]
+				// if err := p.setUpProxyRule(connectTo.allocID, cont.ip, task.port, proxySocket); err != nil {
+				// 	logrus.Error(errors.Wrap(err, "couldn't set up proxy rule in consul listener"))
+				// }
 			}
 
-			// must be added after we try and set up a proxy rule so that the docker listener thread
-			// doesn't read this value first and try and start its own
-			p.allocInventoryReference[task.allocID] = addressAndTaskID{
-				address: key,
-				taskID:  id,
-			}
+		}
+	}
+
+	for key := range p.connectRequests {
+		if _, ok := inventory.connectRequests[key]; !ok {
+			delete(p.connectRequests, key)
 		}
 	}
 

@@ -37,6 +37,7 @@ func NewProxySocket(protocol string, ip net.IP, port int) (ProxySocket, error) {
 		if err != nil {
 			return nil, err
 		}
+		port := listener.Addr().(*net.TCPAddr).Port
 		return &tcpProxySocket{Listener: listener, port: port}, nil
 	case "UDP":
 		addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(host, strconv.Itoa(port)))
@@ -47,6 +48,7 @@ func NewProxySocket(protocol string, ip net.IP, port int) (ProxySocket, error) {
 		if err != nil {
 			return nil, err
 		}
+		port := conn.LocalAddr().(*net.UDPAddr).Port
 		return &udpProxySocket{UDPConn: conn, port: port}, nil
 	case "SCTP":
 		return nil, fmt.Errorf("SCTP is not supported for user space proxy")
