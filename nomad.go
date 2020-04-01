@@ -82,7 +82,7 @@ func ServiceToJob(service Service) (job *nomad.Job) {
 				Name:      port.consulName(service.Name, container.Name),
 				PortLabel: fmt.Sprint(port.number),
 				Tags: []string{
-					fmt.Sprintf("dns-name=%s.%s:%d", container.Name, service.Name, port.number),
+					fmt.Sprintf("dns_name=%s.%s:%d", container.Name, service.Name, port.number),
 					fmt.Sprintf("protocol=%s", port.protocol()),
 				},
 			})

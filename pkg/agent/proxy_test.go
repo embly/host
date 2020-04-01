@@ -152,7 +152,6 @@ func TestProxyDockerAndConsulEvents(te *testing.T) {
 		fcc.deleteService("thing")
 		_ = testProxy.Tick()
 		t.Assert().Len(testProxy.services, 0)
-		t.Assert().Len(testProxy.allocInventoryReference, 0)
 		t.Assert().Len(testProxy.proxies, 0)
 		t.Assert().Len(testProxy.containerAllocs, 0)
 		t.Assert().Len(testProxy.rules, 0)
@@ -213,7 +212,6 @@ func TestProxyDockerAndConsulEventsOutOfOrder(te *testing.T) {
 		fcc.deleteService("thing")
 		_ = testProxy.Tick()
 		t.Assert().Len(testProxy.services, 0)
-		t.Assert().Len(testProxy.allocInventoryReference, 0)
 		t.Assert().Len(testProxy.proxies, 0)
 		t.Assert().Len(testProxy.containerAllocs, 1)
 		t.Assert().Len(testProxy.rules, 1)
@@ -233,7 +231,6 @@ func TestProxyDockerAndConsulEventsOutOfOrder(te *testing.T) {
 		}
 		_ = testProxy.Tick()
 		t.Assert().Len(testProxy.services, 0)
-		t.Assert().Len(testProxy.allocInventoryReference, 0)
 		t.Assert().Len(testProxy.proxies, 0)
 		t.Assert().Len(testProxy.containerAllocs, 0)
 		t.Assert().Len(testProxy.rules, 0)
