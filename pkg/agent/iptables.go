@@ -75,9 +75,9 @@ func (pr ProxyRule) preroutingArgs() []string {
 		"--protocol", "tcp",
 		"--destination", pr.proxyIP,
 		"--source", pr.containerIP,
-		"--dport", fmt.Sprint(pr.proxyPort),
+		"--dport", fmt.Sprint(pr.containerPort),
 		"--jump", "DNAT",
-		"--to-destination", fmt.Sprintf("%s:%d", pr.proxyIP, pr.containerPort),
+		"--to-destination", fmt.Sprintf("%s:%d", pr.proxyIP, pr.proxyPort),
 	}
 }
 

@@ -94,9 +94,7 @@ func newProxy(ip net.IP,
 	if p.ipt, err = newIPTables(); err != nil {
 		return
 	}
-	if err = p.ipt.DeleteChains(); err != nil {
-		return
-	}
+	_ = p.ipt.DeleteChains()
 	if err = p.ipt.CreateChains(); err != nil {
 		return
 	}
