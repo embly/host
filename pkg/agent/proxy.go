@@ -74,6 +74,7 @@ func newProxy(ip net.IP,
 	p.services = map[string]*Service{}
 	p.proxies = map[string]ProxySocket{}
 	p.rules = map[string]ProxyRule{}
+	p.connectRequests = map[string]ConnectTo{}
 	p.containerAllocs = map[string]container{}
 	p.consulUpdates = make(chan ConsulInventory, 2)
 	p.listener = make(chan *docker.APIEvents, 2)
@@ -110,7 +111,10 @@ func (p *Proxy) Start() {
 	}
 }
 
+var tick int
+
 func (p *Proxy) Tick() (err error) {
+	tick++
 	select {
 	case event := <-p.listener:
 		return p.processDockerUpdate(event)
@@ -122,21 +126,23 @@ func (p *Proxy) Tick() (err error) {
 
 var NomadAllocKey = "com.hashicorp.nomad.alloc_id"
 
-func (p *Proxy) setUpProxyRule(key, allocID string) (err error) {
-	cont, haveAlloc := p.containerAllocs[allocID]
-	_, haveProxyRule := p.rules[allocID]
-	proxySocket, haveProxySocket := p.proxies[key]
-	if haveAlloc && !haveProxyRule && haveProxySocket {
-		pr := ProxyRule{
-			proxyIP:       p.ip.String(),
-			containerIP:   cont.ip,
-			proxyPort:     proxySocket.ListenPort(),
-			containerPort: p.services[key].port,
+func (p *Proxy) setUpProxyRule(ct ConnectTo) (err error) {
+	cont, haveAlloc := p.containerAllocs[ct.allocID]
+	for _, hostname := range ct.desiredServices {
+		_, haveProxyRule := p.rules[ct.allocID+hostname]
+		proxySocket, haveProxySocket := p.proxies[hostname]
+		if haveAlloc && !haveProxyRule && haveProxySocket {
+			pr := ProxyRule{
+				proxyIP:       p.ip.String(),
+				containerIP:   cont.ip,
+				proxyPort:     proxySocket.ListenPort(),
+				containerPort: p.services[hostname].port,
+			}
+			if err = p.ipt.AddProxyRule(pr); err != nil {
+				return
+			}
+			p.rules[ct.allocID+hostname] = pr
 		}
-		if err = p.ipt.AddProxyRule(pr); err != nil {
-			return
-		}
-		p.rules[allocID] = pr
 	}
 	return
 }
@@ -157,11 +163,11 @@ func (p *Proxy) processDockerUpdate(event *docker.APIEvents) (err error) {
 			ip: cont.NetworkSettings.IPAddress,
 			id: cont.ID,
 		}
-		for key, ct := range p.connectRequests {
+		for _, ct := range p.connectRequests {
 			// TODO: if alloc ids can be the same on different nodes this could create a strange highly unlikely incorrect rule creation
 			// filter by node probably for connectTo requests
 			if ct.allocID == allocID {
-				if err = p.setUpProxyRule(key, allocID); err != nil {
+				if err = p.setUpProxyRule(ct); err != nil {
 					logrus.Error(errors.Wrap(err, "couldn't set up proxy rule in docker listener"))
 				}
 			}
@@ -171,14 +177,20 @@ func (p *Proxy) processDockerUpdate(event *docker.APIEvents) (err error) {
 	// if a container is stopped then we delete the proxy rule
 	if event.Action == "stop" {
 		delete(p.containerAllocs, allocID)
-		pr, havePR := p.rules[allocID]
-		if !havePR {
-			return
+		for _, ct := range p.connectRequests {
+			if ct.allocID == allocID {
+				for _, hostname := range ct.desiredServices {
+					pr, havePR := p.rules[allocID+hostname]
+					if !havePR {
+						continue
+					}
+					if err := p.ipt.DeleteProxyRule(pr); err != nil {
+						logrus.Error(errors.Wrap(err, "error deleting proxy rule"))
+					}
+					delete(p.rules, allocID+hostname)
+				}
+			}
 		}
-		if err := p.ipt.DeleteProxyRule(pr); err != nil {
-			logrus.Error(errors.Wrap(err, "error deleting proxy rule"))
-		}
-		delete(p.rules, allocID)
 	}
 
 	return
@@ -223,11 +235,11 @@ func (p *Proxy) processConsulUpdate(inventory ConsulInventory) {
 		}
 	}
 
-	for key, connectTo := range p.connectRequests {
+	for key, connectTo := range inventory.connectRequests {
 		if _, ok := p.connectRequests[key]; !ok {
 			p.connectRequests[key] = connectTo
 		}
-		if err := p.setUpProxyRule(key, connectTo.allocID); err != nil {
+		if err := p.setUpProxyRule(connectTo); err != nil {
 			logrus.Error(errors.Wrap(err, "couldn't set up proxy rule in consul listener"))
 		}
 	}

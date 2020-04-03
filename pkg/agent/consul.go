@@ -84,7 +84,7 @@ type Task struct {
 }
 
 func (t *Task) Name() string {
-	return fmt.Sprintf("%s.%s", t.node, t.allocID)
+	return fmt.Sprintf("%s.%s", t.node, t.serviceID)
 }
 
 func (t *Task) Address() string {
@@ -118,7 +118,6 @@ func (c *defaultConsulData) Updates(ch chan ConsulInventory) {
 	var lastIndex uint64
 	var q *consul.QueryOptions
 	for {
-		logrus.WithFields(logrus.Fields{"index": lastIndex}).Info("consul wait")
 		q = &consul.QueryOptions{RequireConsistent: true, WaitIndex: lastIndex}
 		serviceTags, meta, err := c.cc.Services(q)
 		if err != nil {

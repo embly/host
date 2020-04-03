@@ -11,16 +11,15 @@ import (
 
 func TestNewProxy(te *testing.T) {
 	t := tester.New(te)
-	fcc, newConsulData := newFakeConsulData()
+	_, newConsulData := newFakeConsulData()
 
-	testProxy, err := NewProxy(net.IPv4(127, 0, 0, 1),
+	_, err := NewProxy(net.IPv4(127, 0, 0, 1),
 		noopNewProxySocket,
 		newConsulData,
 		newFakeIptables,
 		newFakeDocker,
 	)
 	t.PanicOnErr(err)
-	_, _ = testProxy, fcc
 }
 func TestProxyBasic(te *testing.T) {
 	t := tester.New(te)
@@ -94,14 +93,19 @@ func TestProxyDockerAndConsulEvents(te *testing.T) {
 
 	fd := testProxy.docker.(*fakeDocker)
 	fipt := testProxy.ipt.(*fakeIPTables)
-	_, _, _ = fd, fipt, fcc
 
 	containerIPAddress := "1.2.3.4"
 	dockerID := "foo"
 	var allocID string
+	hostname := "foo.bar:8080"
 	{
 		// create one consul service and send the event
 		name, tags, css := newServiceData("thing", "foo.bar", "tcp", 1)
+		fcc.pushUpdate(name, tags, css)
+		_ = testProxy.Tick()
+	}
+	{
+		name, tags, css := newConnectToData("thang", 1, hostname)
 		fcc.pushUpdate(name, tags, css)
 		allocID = parseAllocIDFromServiceID(css[0].ServiceID)
 		_ = testProxy.Tick()
@@ -125,7 +129,7 @@ func TestProxyDockerAndConsulEvents(te *testing.T) {
 			},
 		}
 		_ = testProxy.Tick()
-		pr, ok := testProxy.rules[allocID]
+		pr, ok := testProxy.rules[allocID+hostname]
 		t.Assert().True(ok)
 		t.Assert().Equal(containerIPAddress, pr.containerIP)
 		_, ok = fipt.rules[pr]
@@ -156,6 +160,11 @@ func TestProxyDockerAndConsulEvents(te *testing.T) {
 		t.Assert().Len(testProxy.containerAllocs, 0)
 		t.Assert().Len(testProxy.rules, 0)
 	}
+	{
+		fcc.deleteService("thang")
+		_ = testProxy.Tick()
+		t.Assert().Len(testProxy.connectRequests, 0)
+	}
 }
 
 func TestProxyDockerAndConsulEventsOutOfOrder(te *testing.T) {
@@ -172,16 +181,18 @@ func TestProxyDockerAndConsulEventsOutOfOrder(te *testing.T) {
 	t.PanicOnErr(err)
 
 	fd := testProxy.docker.(*fakeDocker)
-	fipt := testProxy.ipt.(*fakeIPTables)
-	_, _, _ = fd, fipt, fcc
 
 	containerIPAddress := "1.2.3.4"
 	dockerID := "foo"
+	hostname := "foo.bar:8080"
 	var allocID string
 	{
-		name, tags, css := newServiceData("thing", "foo.bar", "tcp", 1)
-		_, _, _ = name, tags, css
+		name, tags, css := newConnectToData("thang", 1, hostname)
+		fcc.pushUpdate(name, tags, css)
 		allocID = parseAllocIDFromServiceID(css[0].ServiceID)
+		_ = testProxy.Tick()
+
+		// create a connectTo request and send the docker event first
 		fd.containers[dockerID] = docker.Container{
 			ID: dockerID,
 			NetworkSettings: &docker.NetworkSettings{
@@ -199,13 +210,25 @@ func TestProxyDockerAndConsulEventsOutOfOrder(te *testing.T) {
 			},
 		}
 		_ = testProxy.Tick()
+		// no rules yet
+		t.Assert().Len(testProxy.rules, 0)
+
 		fcc.pushUpdate(name, tags, css)
 		_ = testProxy.Tick()
-		pr, ok := testProxy.rules[allocID]
-		t.Assert().True(ok)
-		t.Assert().Equal(containerIPAddress, pr.containerIP)
-		_, ok = fipt.rules[pr]
-		t.Assert().True(ok)
+		// still no rules, as we have no proxy to connect to
+		t.Assert().Len(testProxy.rules, 0)
+	}
+	{
+		name, tags, css := newServiceData("thing", "foo.bar", "tcp", 1)
+		fcc.pushUpdate(name, tags, css)
+		_ = testProxy.Tick()
+		t.Assert().Equal(testProxy.rules[allocID+hostname], ProxyRule{
+			proxyIP:       "127.0.0.1",
+			containerIP:   "1.2.3.4",
+			proxyPort:     0,
+			containerPort: 8080,
+		})
+
 	}
 	{
 		// delete service, ensure all state is deleted
