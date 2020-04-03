@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os/user"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/embly/host/pkg/docktest"
@@ -20,13 +20,23 @@ type fakeIPTables struct {
 
 func (ipt *fakeIPTables) CreateChains() (err error) { return nil }
 func (ipt *fakeIPTables) DeleteChains() (err error) { return nil }
-func (ipt *fakeIPTables) GetRules() (stats []iptables.Stat, err error) {
+func (ipt *fakeIPTables) GetRules(chain string) (stats []iptables.Stat, err error) {
 	panic("unimplemented")
 }
 func (ipt *fakeIPTables) AddProxyRule(pr ProxyRule) (err error) {
 	ipt.rules[pr] = struct{}{}
 	return nil
 }
+
+func (ipt *fakeIPTables) AddProxyRuleToPrerouting(pr ProxyRule) (err error) {
+	ipt.rules[pr] = struct{}{}
+	return nil
+}
+
+func (ipt *fakeIPTables) CleanUpPreroutingRules() (err error) {
+	return nil
+}
+
 func (ipt *fakeIPTables) RuleExists(pr ProxyRule) (exists bool, err error) {
 	_, exists = ipt.rules[pr]
 	return
@@ -42,25 +52,69 @@ func newFakeIptables() (IPTables, error) {
 	}, nil
 }
 
-func shouldWeTestLocalIPTables(t tester.Tester) {
+func isIptablesPermissionsError(err error, t tester.Tester) {
 	if runtime.GOOS != "linux" {
 		t.Skip("don't test iptables on", runtime.GOOS)
 	}
-	user, err := user.Current()
-	t.PanicOnErr(err)
-	if user.Name != "root" {
-		t.Skip("don't run iptables tests if you're not root")
+	if err != nil {
+		if strings.Contains(err.Error(), "Permission denied") {
+			t.Skip("don't have the correct permissions for iptables")
+		}
 	}
+}
+
+func TestPreRouting(te *testing.T) {
+	t := tester.New(te)
+	ipt, err := NewIPTables(exec.New())()
+	t.PanicOnErr(err)
+
+	pr := ProxyRule{
+		proxyIP:       "1.2.3.4",
+		containerIP:   "2.3.4.5",
+		proxyPort:     20201,
+		containerPort: 20202,
+	}
+	err = ipt.AddProxyRuleToPrerouting(pr)
+	isIptablesPermissionsError(err, t)
+	t.PanicOnErr(err)
+
+	{
+		stats, err := ipt.GetRules(prerouting)
+		t.PanicOnErr(err)
+		var emblyCount int
+		for _, stat := range stats {
+			if strings.Contains(stat.Options, commentText) {
+				emblyCount++
+			}
+		}
+		t.Assert().Equal(emblyCount, 1)
+	}
+
+	err = ipt.CleanUpPreroutingRules()
+	t.PanicOnErr(err)
+
+	{
+		stats, err := ipt.GetRules(prerouting)
+		t.PanicOnErr(err)
+		var emblyCount int
+		for _, stat := range stats {
+			if strings.Contains(stat.Options, commentText) {
+				emblyCount++
+			}
+		}
+		t.Assert().Equal(emblyCount, 0)
+	}
+
 }
 
 func TestBasic(te *testing.T) {
 	t := tester.New(te)
-	shouldWeTestLocalIPTables(t)
 	ipt, err := NewIPTables(exec.New())()
 	t.PanicOnErr(err)
 
 	t.Print(ipt)
 	err = ipt.CreateChains()
+	isIptablesPermissionsError(err, t)
 	t.PanicOnErr(err)
 
 	pr := ProxyRule{
@@ -72,19 +126,20 @@ func TestBasic(te *testing.T) {
 	err = ipt.AddProxyRule(pr)
 	t.PanicOnErr(err)
 
-	t.Print(ipt.GetRules())
+	t.Print(ipt.GetRules(emblyPreroutingChain))
 	err = ipt.DeleteChains()
 	t.PanicOnErr(err)
 }
 
 func TestBasicRedirect(te *testing.T) {
 	t := tester.New(te)
-	shouldWeTestLocalIPTables(t)
 
 	ipt, err := NewIPTables(exec.New())()
 	t.PanicOnErr(err)
 
-	t.PanicOnErr(ipt.CreateChains())
+	err = ipt.CreateChains()
+	isIptablesPermissionsError(err, t)
+	t.PanicOnErr(err)
 
 	pr := ProxyRule{
 		proxyIP:       "192.168.86.30",
@@ -153,7 +208,7 @@ func TestBasicRedirectWithinDocker(te *testing.T) {
 	t.PanicOnErr(err)
 	t.Assert().True(exists)
 
-	rules, err := ipt.GetRules()
+	rules, err := ipt.GetRules(emblyPreroutingChain)
 	t.PanicOnErr(err)
 
 	if len(rules) == 0 {
@@ -216,21 +271,22 @@ func TestFull(te *testing.T) {
 	ipt, err := NewIPTables(docktest.NewExecInterface(contIPTables))()
 	t.PanicOnErr(err)
 
-	t.PanicOnErr(ipt.CreateChains())
-
 	pr := ProxyRule{
-		proxyIP:       contServer.NetworkSettings.IPAddress,
 		containerIP:   contCurl.NetworkSettings.IPAddress,
-		proxyPort:     8032,
-		containerPort: 8084,
+		proxyIP:       contServer.NetworkSettings.IPAddress,
+		proxyPort:     8084,
+		containerPort: 8032,
 	}
-	t.PanicOnErr(ipt.AddProxyRule(pr))
+	t.PanicOnErr(ipt.AddProxyRuleToPrerouting(pr))
 
 	stdout, _, err := contCurl.Exec([]string{"curl", fmt.Sprintf("%s:8032", contServer.NetworkSettings.IPAddress)})
-	t.PanicOnErr(err)
+	if err != nil {
+		fmt.Println(err.Error())
+		t.Fatal(err)
+	}
 	t.Assert().Contains(string(stdout), "hello")
 
-	t.PanicOnErr(ipt.DeleteChains())
+	t.PanicOnErr(ipt.CleanUpPreroutingRules())
 	// client.RemoveContainer(docker.RemoveContainerOptions{})
 }
 

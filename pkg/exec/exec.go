@@ -15,6 +15,7 @@ package exec
 
 import (
 	"context"
+	"fmt"
 	"io"
 	osexec "os/exec"
 	"syscall"
@@ -231,6 +232,7 @@ type CodeExitError struct {
 var _ ExitError = CodeExitError{}
 
 func (e CodeExitError) Error() string {
+	fmt.Println(e.Code)
 	return e.Err.Error()
 }
 

@@ -225,13 +225,7 @@ func (ipt *IPTables) ListChains(table string) ([]string, error) {
 	return chains, nil
 }
 
-// Stats lists rules including the byte and packet counts
-func (ipt *IPTables) Stats(table, chain string) ([][]string, error) {
-	args := []string{"-t", table, "-L", chain, "-n", "-v", "-x"}
-	lines, err := ipt.executeList(args)
-	if err != nil {
-		return nil, err
-	}
+func (ipt *IPTables) stats(lines []string) ([][]string, error) {
 
 	appendSubnet := func(addr string) string {
 		if strings.IndexByte(addr, byte('/')) < 0 {
@@ -289,6 +283,17 @@ func (ipt *IPTables) Stats(table, chain string) ([][]string, error) {
 		rows = append(rows, fields)
 	}
 	return rows, nil
+
+}
+
+// Stats lists rules including the byte and packet counts
+func (ipt *IPTables) Stats(table, chain string) ([][]string, error) {
+	args := []string{"-t", table, "-L", chain, "-n", "-v", "-x"}
+	lines, err := ipt.executeList(args)
+	if err != nil {
+		return nil, err
+	}
+	return ipt.stats(lines)
 }
 
 // ParseStat parses a single statistic row into a Stat struct. The input should

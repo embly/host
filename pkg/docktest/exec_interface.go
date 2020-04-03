@@ -98,7 +98,14 @@ func (ci *CmdInterface) Run() error {
 	return nil
 }
 
-func (ci *CmdInterface) CombinedOutput() ([]byte, error)    { return nil, ErrUnimplemented }
+func (ci *CmdInterface) CombinedOutput() ([]byte, error) {
+	var b bytes.Buffer
+	ci.SetStdout(&b)
+	ci.SetStderr(&b)
+	err := ci.Run()
+	return b.Bytes(), err
+}
+
 func (ci *CmdInterface) Output() ([]byte, error)            { return nil, ErrUnimplemented }
 func (ci *CmdInterface) SetDir(dir string)                  { ci.dir = dir }
 func (ci *CmdInterface) SetStdin(in io.Reader)              { panic("unimplemented") }

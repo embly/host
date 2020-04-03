@@ -94,10 +94,7 @@ func newProxy(ip net.IP,
 	if p.ipt, err = newIPTables(); err != nil {
 		return
 	}
-	_ = p.ipt.DeleteChains()
-	if err = p.ipt.CreateChains(); err != nil {
-		return
-	}
+	_ = p.ipt.CleanUpPreroutingRules()
 
 	go p.cd.Updates(p.consulUpdates)
 	return
@@ -136,7 +133,7 @@ func (p *Proxy) setUpProxyRule(ct ConnectTo) (err error) {
 				proxyPort:     proxySocket.ListenPort(),
 				containerPort: p.services[hostname].port,
 			}
-			if err = p.ipt.AddProxyRule(pr); err != nil {
+			if err = p.ipt.AddProxyRuleToPrerouting(pr); err != nil {
 				return
 			}
 			p.rules[ct.allocID+hostname] = pr

@@ -8,7 +8,11 @@ import (
 )
 
 func main() {
-	p, err := agent.DefaultNewProxy(net.IPv4(127, 0, 0, 1))
+	eth0 := net.IPv4(192, 168, 86, 30)
+	loopback := net.IPv4(127, 0, 0, 1)
+	docker0 := net.IPv4(172, 17, 0, 1)
+	_, _, _ = eth0, loopback, docker0
+	p, err := agent.DefaultNewProxy(docker0)
 	if err != nil {
 		logrus.Fatal("couldn't start proxy agent", err)
 		return
