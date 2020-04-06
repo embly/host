@@ -62,3 +62,9 @@ for broadcasting:
 for addressing:
     - iptables route is written in the docker container to map the outgoing port
       and proxy ip with the correct destination
+
+
+
+## Resources
+
+ - https://github.com/kubernetes/kubernetes/tree/master/pkg/proxy/ipvs
