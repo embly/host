@@ -1,0 +1,33 @@
+version: "3.5"
+
+services:
+  consul:
+    image: nixery.dev/shell/consul
+    command: consul agent -dev -client 0.0.0.0
+    ports:
+      - "8500:8500"
+  nomad:
+    cap_add:
+      - SYS_ADMIN
+      - NET_ADMIN
+    build:
+      dockerfile: nomad.Dockerfile
+      context: .
+    volumes:
+      - ./:/app
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/nomad/data:/tmp/nomad/data
+    depends_on:
+      - consul
+      - agent
+    ports:
+      - "4647:4647"
+      - "4648:4648"
+      - "4646:4646"
+  agent:
+    network_mode: host
+    image: embly-host-agent:latest
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
