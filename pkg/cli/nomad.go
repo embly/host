@@ -111,6 +111,7 @@ func ServiceToJob(service Service) (job *nomad.Job) {
 		// task.SetConfig("network_mode", "create_shared")
 		// task.SetConfig("network_aliases", []string{container.Name})
 		task.SetConfig("image", container.Image)
+		task.SetConfig("runtime", "runsc")
 		task.SetConfig("port_map", []map[string]int{portMap})
 		taskGroup.AddTask(task)
 		task.Services = services

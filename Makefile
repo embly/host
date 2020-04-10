@@ -6,8 +6,8 @@ nomad_down:
 	cd nomad && docker-compose down
 
 nomad_build:
-	cd $$GOPATH/src/github.com/hashicorp/nomad/drivers/docker/cmd \
-		&& docker build -f ./Dockerfile -t docker-driver-embly ../../../
+	cd $$GOPATH/src/github.com/hashicorp/nomad/ \
+		&& docker build -f ./Dockerfile -t nomad-embly .
 	cd nomad && docker build -t nomad_nomad:latest -f nomad.Dockerfile .
 
 nomad_run:
