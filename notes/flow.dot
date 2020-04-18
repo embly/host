@@ -1,0 +1,8 @@
+digraph G {
+  "Deploy\ncounter.standalone2 and \ndashboard.standalone2" -> "Nomad"
+  "Nomad" -> "Consul" [label = "port 20343, alloc_id=foo\n name={name}-{alloc_id}"]
+  "Nomad" -> "Docker" [label = "port 20343, alloc_id=foo\n name={name}-{alloc_id}"]
+
+
+  "To" -> "GraphViz!" [label = " deploy"]
+}

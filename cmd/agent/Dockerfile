@@ -1,13 +1,17 @@
+# syntax = docker/dockerfile:experimental
 FROM golang:1.14-alpine
 
 WORKDIR /opt
 RUN apk add build-base
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 COPY cmd ./cmd
 COPY pkg ./pkg
 
-RUN cd cmd/agent && go build
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    cd cmd/agent && go build
 
 FROM alpine
 

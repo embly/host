@@ -7,7 +7,7 @@ require (
 	github.com/fsouza/go-dockerclient v1.6.3
 	github.com/gogo/protobuf v1.2.2-0.20190723190241-65acae22fc9d // indirect
 	github.com/golang/protobuf v1.3.5 // indirect
-	github.com/google/btree v1.0.0 // indirect
+	github.com/google/uuid v1.1.1
 	github.com/hashicorp/consul/api v1.4.0
 	github.com/hashicorp/go-immutable-radix v1.1.0 // indirect
 	github.com/hashicorp/go-msgpack v0.5.5 // indirect
@@ -25,9 +25,9 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.5.0
 	go.starlark.net v0.0.0-20200306205701-8dd3e2ee1dd5
+	go4.org v0.0.0-20200411211856-f5505b9728dd
 	golang.org/x/crypto v0.0.0-20200302210943-78000ba7a073 // indirect
 	golang.org/x/net v0.0.0-20200301022130-244492dfa37a // indirect
-	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e // indirect
 	golang.org/x/sys v0.0.0-20200302150141-5c8b2ff67527 // indirect
 	google.golang.org/genproto v0.0.0-20200306153348-d950eab6f860 // indirect
 	google.golang.org/grpc v1.28.0 // indirect

@@ -36,26 +36,20 @@ func newFakeDocker() (Docker, error) {
 func TestDockerLabelSearch(te *testing.T) {
 	t := tester.New(te)
 	t.Skip()
-	allocID := "4243abe5-1b52-1791-4af9-8383a649265b"
 	c, err := docker.NewClientFromEnv()
 	t.PanicOnErr(err)
-	containers, err := c.ListContainers(docker.ListContainersOptions{
-		Filters: map[string][]string{
-			"label": []string{fmt.Sprintf("com.hashicorp.nomad.alloc_id=%s", allocID)},
-		},
-	})
-	t.PanicOnErr(err)
-	t.Print(containers)
 
 	listener := make(chan *docker.APIEvents)
 	err = c.AddEventListener(listener)
 	t.PanicOnErr(err)
 
 	for x := range listener {
+		fmt.Println(x.Action, x.Type, x.Actor.Attributes)
 		if x.Action == "start" &&
 			x.Type == "container" &&
 			len(x.Actor.Attributes["com.hashicorp.nomad.alloc_id"]) > 0 {
 			fmt.Println(x.Action, x.Type, x.Actor.Attributes, time.Now())
+			tester.Print(x)
 			cont, err := c.InspectContainerWithOptions(docker.InspectContainerOptions{ID: x.Actor.ID})
 			if err != nil {
 				panic(err)
@@ -63,5 +57,29 @@ func TestDockerLabelSearch(te *testing.T) {
 			// cont.NetworkSettings.IPAddress
 			t.Print(cont.NetworkSettings.IPAddress)
 		}
+	}
+}
+
+func TestDockerContainers(te *testing.T) {
+	t := tester.New(te)
+	t.Skip()
+	c, err := docker.NewClientFromEnv()
+	t.PanicOnErr(err)
+	{
+		containers, err := c.ListContainers(docker.ListContainersOptions{})
+		t.PanicOnErr(err)
+		t.Print(containers)
+	}
+
+	{
+		allocID := "4243abe5-1b52-1791-4af9-8383a649265b"
+
+		containers, err := c.ListContainers(docker.ListContainersOptions{
+			Filters: map[string][]string{
+				"label": {fmt.Sprintf("com.hashicorp.nomad.alloc_id=%s", allocID)},
+			},
+		})
+		t.PanicOnErr(err)
+		_ = containers
 	}
 }

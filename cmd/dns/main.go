@@ -2,49 +2,39 @@ package main
 
 import (
 	"fmt"
-	"log"
-
-	"github.com/miekg/dns"
-	"github.com/sirupsen/logrus"
+	"net"
 )
 
-var c *dns.Client
-
 func main() {
-	c = new(dns.Client)
-
-	server := &dns.Server{Addr: "127.0.0.1:5353", Net: "udp"}
-	dns.HandleFunc("x.", handleX)
-	dns.HandleFunc(".", forward)
-	fmt.Println("serving", server)
-	log.Fatal(server.ListenAndServe())
-}
-func forward(w dns.ResponseWriter, r *dns.Msg) {
-	m, _, err := c.Exchange(r, "8.8.8.8:53")
+	// log.Fatal(agent.StartDNS())
+	a := "172.17.0.1:5367"
+	/* Lets prepare a address at any address at port 10001*/
+	addr, err := net.ResolveUDPAddr("udp", a)
 	if err != nil {
-		logrus.Error(err)
+		panic(err)
 	}
-	if err = w.WriteMsg(m); err != nil {
-		logrus.Error(err)
+	fmt.Println("listening on", a)
+	/* Now listen at selected port */
+	conn, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		panic(err)
 	}
-}
+	defer conn.Close()
 
-func handleX(w dns.ResponseWriter, r *dns.Msg) {
-	m := new(dns.Msg)
-	m.SetReply(r)
-	m.Compress = false
-	if r.Opcode == dns.OpcodeQuery {
-		for _, q := range m.Question {
-			if q.Qtype == dns.TypeA {
-				log.Printf("Query for %s\n", q.Name)
-				rr, err := dns.NewRR(fmt.Sprintf("%s A %s", q.Name, "127.0.0.1"))
-				if err == nil {
-					m.Answer = append(m.Answer, rr)
-				}
-			}
+	buf := make([]byte, 1024)
+
+	for {
+		n, addr, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			panic(err)
 		}
+		fmt.Printf("received: %s from: %s\n", string(buf[0:n]), addr)
+
+		if err != nil {
+			fmt.Println("error: ", err)
+		}
+
+		_, _ = conn.WriteTo(buf[0:n], addr)
 	}
-	if err := w.WriteMsg(m); err != nil {
-		logrus.Error(err)
-	}
+	// }
 }

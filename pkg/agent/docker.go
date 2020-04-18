@@ -11,7 +11,9 @@ func NewDocker() (Docker, error) {
 	return docker.NewClientFromEnv()
 }
 
-type container struct {
-	ip string
-	id string
+// Container tracks a runnning docker container
+type Container struct {
+	IPAddress   string
+	ContainerID string
+	TaskID      TaskID
 }

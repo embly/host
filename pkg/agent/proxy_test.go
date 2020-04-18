@@ -5,17 +5,20 @@ import (
 	"testing"
 
 	docker "github.com/fsouza/go-dockerclient"
+	nomad "github.com/hashicorp/nomad/api"
 	"github.com/maxmcd/tester"
 	"github.com/sirupsen/logrus"
 )
 
 func TestNewProxy(te *testing.T) {
 	t := tester.New(te)
-	_, newConsulData := newFakeConsulData()
+	_, newConsulData := newMockConsulData()
+	_, newNomadData := newMockNomadData()
 
 	_, err := NewProxy(net.IPv4(127, 0, 0, 1),
 		noopNewProxySocket,
 		newConsulData,
+		newNomadData,
 		newFakeIptables,
 		newFakeDocker,
 	)
@@ -24,18 +27,19 @@ func TestNewProxy(te *testing.T) {
 func TestProxyBasic(te *testing.T) {
 	t := tester.New(te)
 
-	fcc, newConsulData := newFakeConsulData()
-
+	mcc, newConsulData := newMockConsulData()
+	_, newNomadData := newMockNomadData()
 	testProxy, err := newProxy(net.IPv4(127, 0, 0, 1),
 		noopNewProxySocket,
 		newConsulData,
+		newNomadData,
 		newFakeIptables,
 		newFakeDocker,
 	)
 	t.PanicOnErr(err)
 
-	fcc.pushUpdate(newServiceData("thing", "foo.bar", "tcp", 1))
-	_ = testProxy.Tick()
+	mcc.pushUpdate(newServiceData("thing", "foo.bar", "tcp", 1))
+	testProxy.Tick()
 	var oldService *Service
 	var oldProxy ProxySocket
 	{
@@ -51,8 +55,8 @@ func TestProxyBasic(te *testing.T) {
 	}
 	t.Assert().True(oldService.alive)
 
-	fcc.pushUpdate(newServiceData("thing", "foo.bar", "tcp", 2))
-	_ = testProxy.Tick()
+	mcc.pushUpdate(newServiceData("thing", "foo.bar", "tcp", 2))
+	testProxy.Tick()
 
 	{
 		service, ok := testProxy.services["foo.bar:8080"]
@@ -62,15 +66,15 @@ func TestProxyBasic(te *testing.T) {
 		t.Assert().Equal(len(service.inventory), 2)
 	}
 
-	fcc.pushUpdate(newServiceData("otherthing", "foo.baz", "tcp", 1))
-	_ = testProxy.Tick()
+	mcc.pushUpdate(newServiceData("otherthing", "foo.baz", "tcp", 1))
+	testProxy.Tick()
 
 	{
 		t.Assert().Equal(2, len(testProxy.services))
 	}
 
-	fcc.deleteService("thing")
-	_ = testProxy.Tick()
+	mcc.deleteService("thing")
+	testProxy.Tick()
 	t.Assert().False(oldService.alive)
 	{
 		t.Assert().Equal(1, len(testProxy.services))
@@ -81,11 +85,12 @@ func TestProxyBasic(te *testing.T) {
 func TestProxyDockerAndConsulEvents(te *testing.T) {
 	logrus.SetReportCaller(true)
 	t := tester.New(te)
-	fcc, newConsulData := newFakeConsulData()
-
+	mcc, newConsulData := newMockConsulData()
+	mnc, newNomadData := newMockNomadData()
 	testProxy, err := newProxy(net.IPv4(127, 0, 0, 1),
 		noopNewProxySocket,
 		newConsulData,
+		newNomadData,
 		newFakeIptables,
 		newFakeDocker,
 	)
@@ -96,19 +101,24 @@ func TestProxyDockerAndConsulEvents(te *testing.T) {
 
 	containerIPAddress := "1.2.3.4"
 	dockerID := "foo"
-	var allocID string
-	hostname := "foo.bar:8080"
+	var taskID TaskID
+	address := "foo.bar:8080"
 	{
 		// create one consul service and send the event
 		name, tags, css := newServiceData("thing", "foo.bar", "tcp", 1)
-		fcc.pushUpdate(name, tags, css)
-		_ = testProxy.Tick()
+		mcc.pushUpdate(name, tags, css)
+		t.Assert().Equal(testProxy.Tick(), TickConsul)
 	}
 	{
-		name, tags, css := newConnectToData("thang", 1, hostname)
-		fcc.pushUpdate(name, tags, css)
-		allocID = parseAllocIDFromServiceID(css[0].ServiceID)
-		_ = testProxy.Tick()
+		alloc := mockAllocation("job-name", []mockTask{{
+			name:      "thang",
+			connectTo: []string{address},
+		}})
+		taskID.allocID = alloc.ID
+		taskID.name = "thang"
+
+		mnc.setAllocations([]*nomad.Allocation{alloc})
+		t.Assert().Equal(testProxy.Tick(), TickNomad)
 	}
 	{
 		// send the event for that docker container starting
@@ -123,17 +133,19 @@ func TestProxyDockerAndConsulEvents(te *testing.T) {
 			Type:   "container",
 			Actor: docker.APIActor{
 				Attributes: map[string]string{
-					NomadAllocKey: allocID,
+					"name": taskID.name + "-" + taskID.allocID,
 				},
 				ID: dockerID,
 			},
 		}
-		_ = testProxy.Tick()
-		pr, ok := testProxy.rules[allocID+hostname]
+		t.Assert().Equal(testProxy.Tick(), TickDocker)
+
+		pr, ok := testProxy.rules[taskID.toProxyKey(address)]
 		t.Assert().True(ok)
 		t.Assert().Equal(containerIPAddress, pr.containerIP)
 		_, ok = fipt.rules[pr]
 		t.Assert().True(ok)
+
 	}
 	{
 		// stop the container, ensure the proxyRule is cleared
@@ -142,27 +154,27 @@ func TestProxyDockerAndConsulEvents(te *testing.T) {
 			Type:   "container",
 			Actor: docker.APIActor{
 				Attributes: map[string]string{
-					NomadAllocKey: allocID,
+					"name": taskID.name + "-" + taskID.allocID,
 				},
 				ID: dockerID,
 			},
 		}
-		_ = testProxy.Tick()
-		_, ok := testProxy.rules[allocID]
+		testProxy.Tick()
+		_, ok := testProxy.rules[taskID.toProxyKey(address)]
 		t.Assert().False(ok)
 	}
 	{
 		// delete service, ensure all state is deleted
-		fcc.deleteService("thing")
-		_ = testProxy.Tick()
+		mcc.deleteService("thing")
+		testProxy.Tick()
 		t.Assert().Len(testProxy.services, 0)
 		t.Assert().Len(testProxy.proxies, 0)
-		t.Assert().Len(testProxy.containerAllocs, 0)
+		t.Assert().Len(testProxy.containers, 0)
 		t.Assert().Len(testProxy.rules, 0)
 	}
 	{
-		fcc.deleteService("thang")
-		_ = testProxy.Tick()
+		mnc.setAllocations([]*nomad.Allocation{})
+		testProxy.Tick()
 		t.Assert().Len(testProxy.connectRequests, 0)
 	}
 }
@@ -170,11 +182,12 @@ func TestProxyDockerAndConsulEvents(te *testing.T) {
 func TestProxyDockerAndConsulEventsOutOfOrder(te *testing.T) {
 	logrus.SetReportCaller(true)
 	t := tester.New(te)
-	fcc, newConsulData := newFakeConsulData()
-
+	mcc, newConsulData := newMockConsulData()
+	mnc, newNomadData := newMockNomadData()
 	testProxy, err := newProxy(net.IPv4(127, 0, 0, 1),
 		noopNewProxySocket,
 		newConsulData,
+		newNomadData,
 		newFakeIptables,
 		newFakeDocker,
 	)
@@ -185,12 +198,16 @@ func TestProxyDockerAndConsulEventsOutOfOrder(te *testing.T) {
 	containerIPAddress := "1.2.3.4"
 	dockerID := "foo"
 	hostname := "foo.bar:8080"
-	var allocID string
+	var taskID TaskID
 	{
-		name, tags, css := newConnectToData("thang", 1, hostname)
-		fcc.pushUpdate(name, tags, css)
-		allocID = parseAllocIDFromServiceID(css[0].ServiceID)
-		_ = testProxy.Tick()
+		alloc := mockAllocation("job-name", []mockTask{{
+			name:      "thang",
+			connectTo: []string{hostname},
+		}})
+		taskID.allocID = alloc.ID
+		taskID.name = "thang"
+		mnc.setAllocations([]*nomad.Allocation{alloc})
+		testProxy.Tick()
 
 		// create a connectTo request and send the docker event first
 		fd.containers[dockerID] = docker.Container{
@@ -204,39 +221,34 @@ func TestProxyDockerAndConsulEventsOutOfOrder(te *testing.T) {
 			Type:   "container",
 			Actor: docker.APIActor{
 				Attributes: map[string]string{
-					NomadAllocKey: allocID,
+					"name": taskID.name + "-" + taskID.allocID,
 				},
 				ID: dockerID,
 			},
 		}
-		_ = testProxy.Tick()
+		testProxy.Tick()
 		// no rules yet
 		t.Assert().Len(testProxy.rules, 0)
 
-		fcc.pushUpdate(name, tags, css)
-		_ = testProxy.Tick()
-		// still no rules, as we have no proxy to connect to
-		t.Assert().Len(testProxy.rules, 0)
 	}
 	{
 		name, tags, css := newServiceData("thing", "foo.bar", "tcp", 1)
-		fcc.pushUpdate(name, tags, css)
-		_ = testProxy.Tick()
-		t.Assert().Equal(testProxy.rules[allocID+hostname], ProxyRule{
+		mcc.pushUpdate(name, tags, css)
+		testProxy.Tick()
+		t.Assert().Equal(testProxy.rules[taskID.toProxyKey(hostname)], ProxyRule{
 			proxyIP:       "127.0.0.1",
 			containerIP:   "1.2.3.4",
 			proxyPort:     0,
 			containerPort: 8080,
 		})
-
 	}
 	{
 		// delete service, ensure all state is deleted
-		fcc.deleteService("thing")
-		_ = testProxy.Tick()
+		mcc.deleteService("thing")
+		testProxy.Tick()
 		t.Assert().Len(testProxy.services, 0)
 		t.Assert().Len(testProxy.proxies, 0)
-		t.Assert().Len(testProxy.containerAllocs, 1)
+		t.Assert().Len(testProxy.containers, 1)
 		t.Assert().Len(testProxy.rules, 1)
 	}
 
@@ -247,15 +259,15 @@ func TestProxyDockerAndConsulEventsOutOfOrder(te *testing.T) {
 			Type:   "container",
 			Actor: docker.APIActor{
 				Attributes: map[string]string{
-					NomadAllocKey: allocID,
+					"name": taskID.name + "-" + taskID.allocID,
 				},
 				ID: dockerID,
 			},
 		}
-		_ = testProxy.Tick()
+		testProxy.Tick()
 		t.Assert().Len(testProxy.services, 0)
 		t.Assert().Len(testProxy.proxies, 0)
-		t.Assert().Len(testProxy.containerAllocs, 0)
+		t.Assert().Len(testProxy.containers, 0)
 		t.Assert().Len(testProxy.rules, 0)
 	}
 }

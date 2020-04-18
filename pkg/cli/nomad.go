@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	nomad "github.com/hashicorp/nomad/api"
 	"github.com/hashicorp/nomad/helper"
@@ -56,12 +57,7 @@ func ServiceToJob(service Service) (job *nomad.Job) {
 		count = 1
 	}
 	taskGroup := nomad.NewTaskGroup(service.Name, count)
-	// taskGroup.Networks = []*nomad.NetworkResource{{
-	// 	Mode: "bridge",
-	// }}
 
-	// TODO: maybe no custom docker driver
-	// driver := "docker-embly"
 	driver := "docker"
 	for _, container := range service.Containers {
 		task := nomad.NewTask(container.Name, driver)
@@ -87,13 +83,10 @@ func ServiceToJob(service Service) (job *nomad.Job) {
 				},
 			})
 		}
-		for _, address := range container.ConnectTo {
-			services = append(services, &nomad.Service{
-				Name: container.connectToConsulName(service.Name, container.Name, address),
-				Tags: []string{
-					fmt.Sprintf("connect_to=%s", address),
-				},
-			})
+		if len(container.ConnectTo) > 0 {
+			task.Meta = map[string]string{
+				"connect_to": strings.Join(container.ConnectTo, ","),
+			}
 		}
 		task.Resources = &nomad.Resources{
 			CPU:      helper.IntToPtr(container.CPU),
@@ -107,12 +100,10 @@ func ServiceToJob(service Service) (job *nomad.Job) {
 		}
 		task.Env = container.Environment
 
-		// TODO: maybe no custom docker driver
-		// task.SetConfig("network_mode", "create_shared")
-		// task.SetConfig("network_aliases", []string{container.Name})
 		task.SetConfig("image", container.Image)
-		task.SetConfig("runtime", "runsc")
+		task.SetConfig("runtime", "runsc") // gvisor
 		task.SetConfig("port_map", []map[string]int{portMap})
+		task.SetConfig("dns_servers", []string{"172.17.0.1"})
 		taskGroup.AddTask(task)
 		task.Services = services
 	}

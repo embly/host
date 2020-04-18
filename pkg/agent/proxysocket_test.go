@@ -45,10 +45,12 @@ func echoTCPServer(port int) {
 func TestProxySocketBasic(te *testing.T) {
 	t := tester.New(te)
 
-	fcc, newConsulData := newFakeConsulData()
+	fcc, newConsulData := newMockConsulData()
+	_, newNomadData := newMockNomadData()
 	testProxy, err := newProxy(net.IPv4(127, 0, 0, 1),
 		NewProxySocket,
 		newConsulData,
+		newNomadData,
 		newFakeIptables,
 		newFakeDocker,
 	)
@@ -59,7 +61,7 @@ func TestProxySocketBasic(te *testing.T) {
 	echoTCPServer(port)
 
 	fcc.pushUpdate(name, args, catalog)
-	_ = testProxy.Tick()
+	testProxy.Tick()
 	var proxySocket ProxySocket
 	t.Assert().Len(testProxy.proxies, 1)
 	for _, ps := range testProxy.proxies {
@@ -107,10 +109,12 @@ func echoUDPServer(port int) {
 func TestProxySocketUDPBasic(te *testing.T) {
 	t := tester.New(te)
 
-	fcc, newConsulData := newFakeConsulData()
+	fcc, newConsulData := newMockConsulData()
+	_, newNomadData := newMockNomadData()
 	testProxy, err := newProxy(net.IPv4(127, 0, 0, 1),
 		NewProxySocket,
 		newConsulData,
+		newNomadData,
 		newFakeIptables,
 		newFakeDocker,
 	)
@@ -122,7 +126,7 @@ func TestProxySocketUDPBasic(te *testing.T) {
 	echoUDPServer(port)
 
 	fcc.pushUpdate(name, args, catalog)
-	_ = testProxy.Tick()
+	testProxy.Tick()
 
 	var proxySocket ProxySocket
 	for _, ps := range testProxy.proxies {
