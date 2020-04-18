@@ -2,13 +2,12 @@ package agent
 
 import (
 	"fmt"
+	"math/rand"
 	"strings"
 	"sync"
-	"testing"
 
 	"github.com/google/uuid"
 	nomad "github.com/hashicorp/nomad/api"
-	"github.com/maxmcd/tester"
 )
 
 type mockNomadClient struct {
@@ -83,7 +82,6 @@ type mockTask struct {
 
 type mockTaskPort struct {
 	label string
-	value int
 }
 
 func mockAllocation(jobName string, mockTasks []mockTask) *nomad.Allocation {
@@ -94,7 +92,7 @@ func mockAllocation(jobName string, mockTasks []mockTask) *nomad.Allocation {
 		for _, port := range task.ports {
 			ports = append(ports, nomad.Port{
 				Label: port.label,
-				Value: port.value,
+				Value: rand.Intn(1<<16 - 1),
 			})
 		}
 		tasks = append(tasks, &nomad.Task{
@@ -112,7 +110,6 @@ func mockAllocation(jobName string, mockTasks []mockTask) *nomad.Allocation {
 				DynamicPorts: ports,
 			}},
 		}
-
 	}
 	return &nomad.Allocation{
 		ID:            uuid.New().String(),
@@ -125,16 +122,4 @@ func mockAllocation(jobName string, mockTasks []mockTask) *nomad.Allocation {
 			}},
 		},
 	}
-}
-
-func TestMockAllocation(te *testing.T) {
-	t := tester.New(te)
-	alloc := mockAllocation("dashboard2", []mockTask{{
-		name: "counter",
-		ports: []mockTaskPort{{
-			label: "9002",
-			value: 23423,
-		}},
-	}})
-	t.Assert().Equal(23423, alloc.TaskResources["counter"].Networks[0].DynamicPorts[0].Value)
 }

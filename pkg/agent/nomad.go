@@ -1,8 +1,6 @@
 package agent
 
 import (
-	"strings"
-
 	"go4.org/sort"
 )
 
@@ -11,19 +9,6 @@ type ConnectRequest struct {
 	desiredServices []string
 
 	taskID TaskID
-}
-
-func parseConnectToTag(tags []string) []string {
-	for _, tag := range tags {
-		if strings.Contains(tag, "connect_to") {
-			parts := strings.Split(tag, "=")
-			if len(parts) < 2 {
-				continue
-			}
-			return strings.Split(parts[1], ",")
-		}
-	}
-	return nil
 }
 
 type Allocation struct {

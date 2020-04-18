@@ -149,6 +149,7 @@ func (p *Proxy) initFields() {
 	p.containers = map[TaskID]Container{}
 	p.allocations = map[string]Allocation{}
 	p.rules = map[ProxyKey]ProxyRule{}
+	p.siblingRules = map[LinkKey]ProxyRule{}
 }
 
 func (p *Proxy) Start() {
@@ -272,9 +273,9 @@ func (p *Proxy) processDockerUpdate(event *docker.APIEvents) (err error) {
 		if err = p.processDockerStart(taskID, event); err != nil {
 			return
 		}
-	case "stop":
-		fallthrough
 	case "kill":
+		fallthrough
+	case "stop":
 		// if a container is stopped then we delete the proxy rule
 
 		delete(p.containers, taskID)
@@ -368,6 +369,9 @@ func (p *Proxy) processNomadUpdate(allocations []*nomad.Allocation) {
 
 		for _, taskGroup := range alloc.Job.TaskGroups {
 			for _, task := range taskGroup.Tasks {
+				if task.Meta["connect_to"] == "" {
+					continue
+				}
 				key := TaskID{allocID: alloc.ID, name: task.Name}
 				connectRequest := ConnectRequest{
 					taskID:          key,

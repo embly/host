@@ -5,8 +5,8 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/google/uuid"
 	consul "github.com/hashicorp/consul/api"
-	"github.com/hashicorp/go-uuid"
 	"github.com/maxmcd/tester"
 )
 
@@ -19,10 +19,7 @@ func randomPort() int {
 func newCatalogServiceData(name string, count int, tags []string) (string, []string, []*consul.CatalogService) {
 	var css []*consul.CatalogService
 	for i := 0; i < count; i++ {
-		id, err := uuid.GenerateUUID()
-		if err != nil {
-			panic(err)
-		}
+		id := uuid.New().String()
 		css = append(css, &consul.CatalogService{
 			ID:      id,
 			Node:    "f0ca171f3b88",

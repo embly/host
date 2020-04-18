@@ -42,5 +42,4 @@ func TestNomadEvents(te *testing.T) {
 			tester.Print(alloc)
 		}
 	}
-
 }
