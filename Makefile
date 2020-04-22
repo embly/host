@@ -43,6 +43,13 @@ hello_push: hello_build
 agent_build:
 	cd cmd/agent && docker build -f ./Dockerfile -t embly-host-agent:latest ../../
 
+agent_logs:
+	cd nomad && docker-compose logs -f agent
+
+agent_rebuild_and_restart: agent_build
+	cd nomad && docker-compose kill agent && docker-compose up -d agent
+	make agent_logs
+
 genapi_ast:
 	cd python && docker build -t embly-host-ast .
 	docker run -it embly-host-ast
@@ -53,11 +60,13 @@ cli_run:
 dns_run:
 	cd cmd/dns && go run .
 
-agent_logs:
-	cd nomad && docker-compose logs -f agent
 
 tmux_cli_run: nomad_down
 	tmux \
     	new-session  'make nomad_run' \; \
     	split-window 'sleep 12 && make cli_run && bash' \; \
 		split-window 'sleep 12 && make agent_logs' \;
+
+
+generate:
+	cd pkg/pb && go generate

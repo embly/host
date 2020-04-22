@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 
@@ -13,10 +12,14 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	client, err := cli.NewAPIClient()
+	if err != nil {
+		panic(err)
+	}
 
 	for _, service := range file.Services {
-		job := cli.ServiceToJob(service)
-		err := cli.DeployIsh(job)
-		fmt.Println(err)
+		if err = client.DeployService(service); err != nil {
+			log.Fatal(err, service)
+		}
 	}
 }

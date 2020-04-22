@@ -47,7 +47,7 @@ func TestProxySocketBasic(te *testing.T) {
 
 	fcc, newConsulData := newMockConsulData()
 	_, newNomadData := newMockNomadData()
-	testProxy, err := newProxy(net.IPv4(127, 0, 0, 1),
+	testProxy, err := newAgent(net.IPv4(127, 0, 0, 1),
 		NewProxySocket,
 		newConsulData,
 		newNomadData,
@@ -111,7 +111,7 @@ func TestProxySocketUDPBasic(te *testing.T) {
 
 	fcc, newConsulData := newMockConsulData()
 	_, newNomadData := newMockNomadData()
-	testProxy, err := newProxy(net.IPv4(127, 0, 0, 1),
+	testAgent, err := newAgent(net.IPv4(127, 0, 0, 1),
 		NewProxySocket,
 		newConsulData,
 		newNomadData,
@@ -126,10 +126,10 @@ func TestProxySocketUDPBasic(te *testing.T) {
 	echoUDPServer(port)
 
 	fcc.pushUpdate(name, args, catalog)
-	testProxy.Tick()
+	testAgent.Tick()
 
 	var proxySocket ProxySocket
-	for _, ps := range testProxy.proxies {
+	for _, ps := range testAgent.proxies {
 		proxySocket = ps
 		break
 	}

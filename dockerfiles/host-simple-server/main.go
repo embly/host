@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	ip := flag.String("ip", "127.0.0.1", "ip addr")
+	ip := flag.String("ip", "0.0.0.0", "ip addr")
 	port := flag.String("port", "8084", "port")
 	flag.Parse()
 

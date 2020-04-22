@@ -37,12 +37,6 @@ func newMockNomadData() (mnc *mockNomadClient, newConsulData func() (*NomadData,
 	return
 }
 
-func (mnc *mockNomadClient) setSelf(self nomad.AgentSelf) {
-	mnc.cond.L.Lock()
-	defer mnc.cond.L.Unlock()
-	mnc.self = self
-}
-
 func (mnc *mockNomadClient) setAllocations(allocations []*nomad.Allocation) {
 	mnc.cond.L.Lock()
 	defer mnc.cond.L.Unlock()

@@ -12,13 +12,16 @@ import (
 	nomad "github.com/hashicorp/nomad/api"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"google.golang.org/grpc"
 )
 
-type Proxy struct {
+type Agent struct {
 	ip     net.IP
 	cd     *ConsulData
 	nd     *NomadData
 	docker Docker
+
+	grpcServer *grpc.Server
 
 	dockerListener chan *docker.APIEvents
 	consulUpdates  chan map[string]Service
@@ -44,9 +47,6 @@ type Proxy struct {
 
 	// proxy rules for a specific container
 	rules map[ProxyKey]ProxyRule
-
-	// temporary rules for just sibling containers
-	siblingRules map[LinkKey]ProxyRule
 }
 
 type ProxyKey struct {
@@ -63,101 +63,97 @@ type TaskID struct {
 
 func (tid TaskID) toProxyKey(address string) ProxyKey { return ProxyKey{taskID: tid, address: address} }
 
-type LinkKey struct {
-	allocID  string
-	name     string
-	linkName string
-	port     ResourcePort
+func DefaultNewAgent(ip net.IP) (*Agent, error) {
+	return NewAgent(ip, NewProxySocket, NewConsulData, NewNomadData, NewIPTables(exec.New()), NewDocker)
 }
 
-func DefaultNewProxy(ip net.IP) (*Proxy, error) {
-	return NewProxy(ip, NewProxySocket, NewConsulData, NewNomadData, NewIPTables(exec.New()), NewDocker)
-}
-
-func NewProxy(ip net.IP,
+func NewAgent(ip net.IP,
 	newProxySocket func(string, net.IP, int) (ProxySocket, error),
 	newConsulData func() (*ConsulData, error),
 	newNomadData func() (*NomadData, error),
 	newIPTables func() (IPTables, error),
-	newDocker func() (Docker, error)) (p *Proxy, err error) {
+	newDocker func() (Docker, error)) (a *Agent, err error) {
 	for _, sleepFor := range EndpointDialTimeouts {
-		p, err = newProxy(ip, newProxySocket, newConsulData, newNomadData, newIPTables, newDocker)
+		a, err = newAgent(ip, newProxySocket, newConsulData, newNomadData, newIPTables, newDocker)
 		if _, ok := err.(transientError); ok {
 			logrus.Info("error starting proxy, sleeping and retrying: ", err)
 			time.Sleep(sleepFor * 5)
 			continue
 		}
-		return p, err
+		return a, err
 	}
 	return
 }
 
 type transientError error
 
-func newProxy(ip net.IP,
+func newAgent(ip net.IP,
 	newProxySocket func(string, net.IP, int) (ProxySocket, error),
 	newConsulData func() (*ConsulData, error),
 	newNomadData func() (*NomadData, error),
 	newIPTables func() (IPTables, error),
 	newDocker func() (Docker, error)) (
-	p *Proxy, err error) {
-	p = &Proxy{}
-	p.ip = ip
-	p.initFields()
+	a *Agent, err error) {
+	a = &Agent{}
+	a.ip = ip
+	a.initFields()
 
-	p.newProxySocket = newProxySocket
+	a.newProxySocket = newProxySocket
 
-	if p.cd, err = newConsulData(); err != nil {
+	if a.cd, err = newConsulData(); err != nil {
 		err = transientError(err)
 		return
 	}
 
-	if p.nd, err = newNomadData(); err != nil {
+	if a.nd, err = newNomadData(); err != nil {
 		err = transientError(err)
 		return
 	}
-	if err = p.nd.SetNodeID(); err != nil {
+	if err = a.nd.SetNodeID(); err != nil {
 		err = transientError(err)
 		return
 	}
-	if p.docker, err = newDocker(); err != nil {
+	if a.docker, err = newDocker(); err != nil {
 		err = transientError(err)
 		return
 	}
-	if err = p.docker.AddEventListener(p.dockerListener); err != nil {
+	if err = a.docker.AddEventListener(a.dockerListener); err != nil {
 		err = transientError(err)
 		return
 	}
-	if p.ipt, err = newIPTables(); err != nil {
+	if a.ipt, err = newIPTables(); err != nil {
 		return
 	}
-	_ = p.ipt.CleanUpPreroutingRules()
+	_ = a.ipt.CleanUpPreroutingRules()
 
-	go p.cd.Updates(p.consulUpdates)
-	go p.nd.Updates(p.nomadUpdates)
+	if err = a.StartDeployServer(); err != nil {
+		return
+	}
+	go a.cd.Updates(a.consulUpdates)
+	go a.nd.Updates(a.nomadUpdates)
 	return
 }
 
-func (p *Proxy) initFields() {
-	p.dockerListener = make(chan *docker.APIEvents, 2)
-	p.consulUpdates = make(chan map[string]Service, 2)
-	p.nomadUpdates = make(chan []*nomad.Allocation, 2)
+func (a *Agent) initFields() {
+	a.dockerListener = make(chan *docker.APIEvents, 2)
+	a.consulUpdates = make(chan map[string]Service, 2)
+	a.nomadUpdates = make(chan []*nomad.Allocation, 2)
 
-	p.services = map[string]*Service{}
-	p.connectRequests = map[TaskID]ConnectRequest{}
-	p.proxies = map[string]ProxySocket{}
-	p.containers = map[TaskID]Container{}
-	p.allocations = map[string]Allocation{}
-	p.rules = map[ProxyKey]ProxyRule{}
-	p.siblingRules = map[LinkKey]ProxyRule{}
+	a.services = map[string]*Service{}
+	a.connectRequests = map[TaskID]ConnectRequest{}
+	a.proxies = map[string]ProxySocket{}
+	a.containers = map[TaskID]Container{}
+	a.allocations = map[string]Allocation{}
+	a.rules = map[ProxyKey]ProxyRule{}
 }
 
-func (p *Proxy) Start() {
+func (a *Agent) Start() {
+	logrus.Info("agent started")
 	go func() {
 		log.Fatal(StartDNS())
 	}()
 	for {
-		p.Tick()
+		a.Tick()
 	}
 }
 
@@ -167,40 +163,38 @@ const (
 	TickConsul
 )
 
-func (p *Proxy) Tick() int {
+func (a *Agent) Tick() int {
 	select {
-	case event := <-p.dockerListener:
-		_ = p.processDockerUpdate(event)
-		p.checkForTaskResourceLinks()
+	case event := <-a.dockerListener:
+		_ = a.processDockerUpdate(event)
 		return TickDocker
-	case allocations := <-p.nomadUpdates:
-		p.processNomadUpdate(allocations)
-		p.checkForTaskResourceLinks()
+	case allocations := <-a.nomadUpdates:
+		a.processNomadUpdate(allocations)
 		return TickNomad
-	case services := <-p.consulUpdates:
-		p.processConsulUpdate(services)
+	case services := <-a.consulUpdates:
+		a.processConsulUpdate(services)
 		return TickConsul
 	}
 }
 
-var NomadAllocKey = "com.hashicorp.nomad.alloc_id"
+var NomadAllocKey = "com.hashicora.nomad.alloc_id"
 
-func (p *Proxy) setUpProxyRule(ct ConnectRequest) (err error) {
-	cont, haveContainer := p.containers[ct.taskID]
+func (a *Agent) setUpProxyRule(ct ConnectRequest) (err error) {
+	cont, haveContainer := a.containers[ct.taskID]
 	for _, address := range ct.desiredServices {
-		_, haveProxyRule := p.rules[ct.taskID.toProxyKey(address)]
-		proxySocket, haveProxySocket := p.proxies[address]
+		_, haveProxyRule := a.rules[ct.taskID.toProxyKey(address)]
+		proxySocket, haveProxySocket := a.proxies[address]
 		if haveContainer && !haveProxyRule && haveProxySocket {
 			pr := ProxyRule{
-				proxyIP:       p.ip.String(),
+				proxyIP:       a.ip.String(),
 				containerIP:   cont.IPAddress,
 				proxyPort:     proxySocket.ListenPort(),
-				containerPort: p.services[address].port,
+				containerPort: a.services[address].port,
 			}
-			if err = p.ipt.AddProxyRuleToPrerouting(pr); err != nil {
+			if err = a.ipt.AddProxyRuleToPrerouting(pr); err != nil {
 				return
 			}
-			p.rules[ct.taskID.toProxyKey(address)] = pr
+			a.rules[ct.taskID.toProxyKey(address)] = pr
 		}
 	}
 	return
@@ -217,60 +211,16 @@ func taskIDFromString(id string) (taskID TaskID) {
 	}
 }
 
-func (p *Proxy) checkForTaskResourceLinks() {
-	for _, alloc := range p.allocations {
-		alloc.allTaskResourcePairs(func(a, b TaskResource) {
-			key := LinkKey{allocID: alloc.ID, name: a.Name, linkName: b.Name}
-			if _, ok := p.siblingRules[key]; ok {
-				// we have the necessary proxy rules for this one
-				return
-			}
-			aCont, aOk := p.containers[TaskID{
-				allocID: alloc.ID,
-				name:    a.Name,
-			}]
-			if !aOk {
-				return
-			}
-			bCont, bOk := p.containers[TaskID{
-				allocID: alloc.ID,
-				name:    b.Name,
-			}]
-			if !bOk {
-				return
-			}
-			for _, resourcePort := range b.Ports {
-				key.port = resourcePort
-				if _, ok := p.siblingRules[key]; ok {
-					continue
-				}
-				pr := ProxyRule{
-					containerIP:   aCont.IPAddress,
-					containerPort: resourcePort.Listening,
-					proxyIP:       bCont.IPAddress,
-					proxyPort:     resourcePort.Value,
-				}
-				if err := p.ipt.AddProxyRuleToPrerouting(pr); err != nil {
-					logrus.Error(err)
-				}
-				p.siblingRules[key] = pr
-			}
-		})
-	}
-
-	// todo: delete stale?
-}
-
 // when a new container starts we check our existing task to see if we
 // have a proxy and set one up if we don't
-func (p *Proxy) processDockerUpdate(event *docker.APIEvents) (err error) {
+func (a *Agent) processDockerUpdate(event *docker.APIEvents) (err error) {
 	taskID := taskIDFromString(event.Actor.Attributes["name"])
 	if event.Type != "container" || taskID.allocID == "" {
 		return
 	}
 	switch event.Action {
 	case "start":
-		if err = p.processDockerStart(taskID, event); err != nil {
+		if err = a.processDockerStart(taskID, event); err != nil {
 			return
 		}
 	case "kill":
@@ -278,18 +228,18 @@ func (p *Proxy) processDockerUpdate(event *docker.APIEvents) (err error) {
 	case "stop":
 		// if a container is stopped then we delete the proxy rule
 
-		delete(p.containers, taskID)
-		for _, ct := range p.connectRequests {
+		delete(a.containers, taskID)
+		for _, ct := range a.connectRequests {
 			if ct.taskID == taskID {
 				for _, address := range ct.desiredServices {
-					pr, havePR := p.rules[taskID.toProxyKey(address)]
+					pr, havePR := a.rules[taskID.toProxyKey(address)]
 					if !havePR {
 						continue
 					}
-					if err := p.ipt.DeleteProxyRule(pr); err != nil {
+					if err := a.ipt.DeleteProxyRule(pr); err != nil {
 						logrus.Error(errors.Wrap(err, "error deleting proxy rule"))
 					}
-					delete(p.rules, taskID.toProxyKey(address))
+					delete(a.rules, taskID.toProxyKey(address))
 				}
 			}
 		}
@@ -297,38 +247,29 @@ func (p *Proxy) processDockerUpdate(event *docker.APIEvents) (err error) {
 	return
 }
 
-func (p *Proxy) processDockerStart(taskID TaskID, event *docker.APIEvents) (err error) {
-	cont, err := p.docker.InspectContainerWithOptions(docker.InspectContainerOptions{ID: event.Actor.ID})
+func (a *Agent) processDockerStart(taskID TaskID, event *docker.APIEvents) (err error) {
+	cont, err := a.docker.InspectContainerWithOptions(docker.InspectContainerOptions{ID: event.Actor.ID})
 	if err != nil {
 		return err
 	}
-	p.containers[taskID] = Container{
+	a.containers[taskID] = Container{
 		IPAddress:   cont.NetworkSettings.IPAddress,
 		ContainerID: cont.ID,
 		TaskID:      taskID,
 	}
-	for _, ct := range p.connectRequests {
+	for _, ct := range a.connectRequests {
 		// TODO: if alloc ids can be the same on different nodes this could create a strange highly unlikely incorrect rule creation
 		// filter by node probably for connectTo requests
 		if ct.taskID == taskID {
-			if err = p.setUpProxyRule(ct); err != nil {
+			if err = a.setUpProxyRule(ct); err != nil {
 				logrus.Error(errors.Wrap(err, "couldn't set up proxy rule in docker listener"))
-			}
-		}
-	}
-
-	if alloc, ok := p.allocations[taskID.allocID]; ok {
-		// we have an allocation locally for this container
-		for _, tr := range alloc.TaskResources {
-			if tr.Name == taskID.name {
-				continue
 			}
 		}
 	}
 	return
 }
 
-func (p *Proxy) allocToAllocation(alloc *nomad.Allocation) Allocation {
+func (a *Agent) allocToAllocation(alloc *nomad.Allocation) Allocation {
 	allocation := Allocation{
 		ID:            alloc.ID,
 		TaskResources: map[string]TaskResource{},
@@ -358,14 +299,14 @@ func (p *Proxy) allocToAllocation(alloc *nomad.Allocation) Allocation {
 	return allocation
 }
 
-func (p *Proxy) processNomadUpdate(allocations []*nomad.Allocation) {
+func (a *Agent) processNomadUpdate(allocations []*nomad.Allocation) {
 	keys := map[string]struct{}{}
 	connectKeys := map[TaskID]struct{}{}
 
 	for _, alloc := range allocations {
 		keys[alloc.ID] = struct{}{}
 
-		p.allocations[alloc.ID] = p.allocToAllocation(alloc)
+		a.allocations[alloc.ID] = a.allocToAllocation(alloc)
 
 		for _, taskGroup := range alloc.Job.TaskGroups {
 			for _, task := range taskGroup.Tasks {
@@ -377,10 +318,10 @@ func (p *Proxy) processNomadUpdate(allocations []*nomad.Allocation) {
 					taskID:          key,
 					desiredServices: strings.Split(task.Meta["connect_to"], ","),
 				}
-				if _, ok := p.connectRequests[key]; !ok {
-					p.connectRequests[key] = connectRequest
+				if _, ok := a.connectRequests[key]; !ok {
+					a.connectRequests[key] = connectRequest
 				}
-				if err := p.setUpProxyRule(connectRequest); err != nil {
+				if err := a.setUpProxyRule(connectRequest); err != nil {
 					logrus.Error(errors.Wrap(err, "couldn't set up proxy rule in nomad listener"))
 				}
 				connectKeys[key] = struct{}{}
@@ -388,31 +329,31 @@ func (p *Proxy) processNomadUpdate(allocations []*nomad.Allocation) {
 		}
 	}
 
-	for key := range p.connectRequests {
+	for key := range a.connectRequests {
 		if _, ok := connectKeys[key]; !ok {
-			delete(p.connectRequests, key)
+			delete(a.connectRequests, key)
 		}
 	}
 
 	// delete allocs that no longer exists
-	for allocID := range p.allocations {
+	for allocID := range a.allocations {
 		if _, ok := keys[allocID]; !ok {
-			delete(p.allocations, allocID)
+			delete(a.allocations, allocID)
 		}
 	}
 }
 
-func (p *Proxy) processConsulUpdate(services map[string]Service) {
+func (a *Agent) processConsulUpdate(services map[string]Service) {
 	// newTasks := map[string]map[string]Task{}
 
 	for key, service := range services {
 		// check for services we don't have and add them
-		_, ok := p.services[key]
+		_, ok := a.services[key]
 		if !ok {
 			logrus.Info("adding proxy for ", key)
 			svc := service
 			// add an entirely new service
-			proxySocket, err := p.newProxySocket(svc.protocol, p.ip, 0)
+			proxySocket, err := a.newProxySocket(svc.protocol, a.ip, 0)
 			if err != nil {
 				// this will error if the input data (protocol, addr, etc..) is invalid
 				// likely means we just ignore the service
@@ -420,14 +361,14 @@ func (p *Proxy) processConsulUpdate(services map[string]Service) {
 				continue
 			}
 			go proxySocket.ProxyLoop(&svc)
-			p.services[key] = &svc
-			p.proxies[key] = proxySocket
+			a.services[key] = &svc
+			a.proxies[key] = proxySocket
 
 			// TODO: less dumb than this?
-			for _, ct := range p.connectRequests {
+			for _, ct := range a.connectRequests {
 				for _, addr := range ct.desiredServices {
 					if addr == key {
-						if err = p.setUpProxyRule(ct); err != nil {
+						if err = a.setUpProxyRule(ct); err != nil {
 							logrus.Error(errors.Wrap(err, "couldn't set up proxy rule in consul listener"))
 						}
 					}
@@ -435,20 +376,20 @@ func (p *Proxy) processConsulUpdate(services map[string]Service) {
 			}
 		} else {
 			// update the task list on an existing service
-			added, deleted := p.services[key].processUpdate(service.inventory)
+			added, deleted := a.services[key].processUpdate(service.inventory)
 			_, _ = added, deleted
 		}
 	}
 
 	// check for services we no longer have and shut them down
-	for key := range p.services {
+	for key := range a.services {
 		if _, ok := services[key]; !ok {
 			// marking it as dead will stop new requests
 			// drop the proxy from the map and it will eventually exit
-			p.services[key].alive = false
-			p.proxies[key].Close()
-			delete(p.services, key)
-			delete(p.proxies, key)
+			a.services[key].alive = false
+			a.proxies[key].Close()
+			delete(a.services, key)
+			delete(a.proxies, key)
 		}
 	}
 }

@@ -13,20 +13,20 @@ import (
 	"golang.org/x/exp/rand"
 )
 
-type TestProxy struct {
-	*Proxy
+type TestAgent struct {
+	*Agent
 	mcc *mockConsulClient
 	mnc *mockNomadClient
 }
 
-func NewTestProxy() *TestProxy {
-	tp := TestProxy{}
+func NewTestAgent() *TestAgent {
+	tp := TestAgent{}
 	mcc, newConsulData := newMockConsulData()
 	mnc, newNomadData := newMockNomadData()
 	tp.mcc = mcc
 	tp.mnc = mnc
 
-	proxy, err := newProxy(net.IPv4(127, 0, 0, 1),
+	proxy, err := newAgent(net.IPv4(127, 0, 0, 1),
 		noopNewProxySocket,
 		newConsulData,
 		newNomadData,
@@ -36,7 +36,7 @@ func NewTestProxy() *TestProxy {
 	if err != nil {
 		panic(err)
 	}
-	tp.Proxy = proxy
+	tp.Agent = proxy
 	return &tp
 }
 
@@ -58,7 +58,7 @@ func randomIP() string {
 	).String()
 }
 
-func (tp *TestProxy) createTestData(info map[string][]mockTask) map[string]jobTestData {
+func (tp *TestAgent) createTestData(info map[string][]mockTask) map[string]jobTestData {
 	out := map[string]jobTestData{}
 	for jobName, tasks := range info {
 		jtd := jobTestData{}
@@ -98,7 +98,7 @@ func (tp *TestProxy) createTestData(info map[string][]mockTask) map[string]jobTe
 func TestFakeData(te *testing.T) {
 	t := tester.New(te)
 	_ = t
-	tp := NewTestProxy()
+	tp := NewTestAgent()
 	tp.createTestData(map[string][]mockTask{
 		"standalone2": {{
 			name: "counter",
@@ -114,12 +114,12 @@ func TestFakeData(te *testing.T) {
 	})
 }
 
-func TestNewProxy(te *testing.T) {
+func TestNewAgent(te *testing.T) {
 	t := tester.New(te)
 	_, newConsulData := newMockConsulData()
 	_, newNomadData := newMockNomadData()
 
-	_, err := NewProxy(net.IPv4(127, 0, 0, 1),
+	_, err := NewAgent(net.IPv4(127, 0, 0, 1),
 		noopNewProxySocket,
 		newConsulData,
 		newNomadData,
@@ -128,12 +128,12 @@ func TestNewProxy(te *testing.T) {
 	)
 	t.PanicOnErr(err)
 }
-func TestProxyBasic(te *testing.T) {
+func TestAgentBasic(te *testing.T) {
 	t := tester.New(te)
 
 	mcc, newConsulData := newMockConsulData()
 	_, newNomadData := newMockNomadData()
-	testProxy, err := newProxy(net.IPv4(127, 0, 0, 1),
+	testAgent, err := newAgent(net.IPv4(127, 0, 0, 1),
 		noopNewProxySocket,
 		newConsulData,
 		newNomadData,
@@ -143,27 +143,27 @@ func TestProxyBasic(te *testing.T) {
 	t.PanicOnErr(err)
 
 	mcc.pushUpdate(newServiceData("thing", "foo.bar", "tcp", 1))
-	testProxy.Tick()
+	testAgent.Tick()
 	var oldService *Service
 	var oldProxy ProxySocket
 	{
-		service, ok := testProxy.services["foo.bar:8080"]
+		service, ok := testAgent.services["foo.bar:8080"]
 		oldService = service
 		t.Assert().True(ok)
 		t.Assert().Equal(service.hostname, "foo.bar")
 		t.Assert().Equal(service.port, 8080)
 
-		proxy, ok := testProxy.proxies["foo.bar:8080"]
+		proxy, ok := testAgent.proxies["foo.bar:8080"]
 		t.Assert().True(ok)
 		oldProxy = proxy
 	}
 	t.Assert().True(oldService.alive)
 
 	mcc.pushUpdate(newServiceData("thing", "foo.bar", "tcp", 2))
-	testProxy.Tick()
+	testAgent.Tick()
 
 	{
-		service, ok := testProxy.services["foo.bar:8080"]
+		service, ok := testAgent.services["foo.bar:8080"]
 		t.Assert().True(ok)
 		t.Assert().Equal(service.hostname, "foo.bar")
 		t.Assert().Equal(service.port, 8080)
@@ -171,27 +171,27 @@ func TestProxyBasic(te *testing.T) {
 	}
 
 	mcc.pushUpdate(newServiceData("otherthing", "foo.baz", "tcp", 1))
-	testProxy.Tick()
+	testAgent.Tick()
 
 	{
-		t.Assert().Equal(2, len(testProxy.services))
+		t.Assert().Equal(2, len(testAgent.services))
 	}
 
 	mcc.deleteService("thing")
-	testProxy.Tick()
+	testAgent.Tick()
 	t.Assert().False(oldService.alive)
 	{
-		t.Assert().Equal(1, len(testProxy.services))
+		t.Assert().Equal(1, len(testAgent.services))
 	}
 	t.Assert().True(oldProxy.(*noopProxySocket).closed)
 }
 
-func TestProxyDockerAndConsulEvents(te *testing.T) {
+func TestAgentDockerAndConsulEvents(te *testing.T) {
 	logrus.SetReportCaller(true)
 	t := tester.New(te)
 	mcc, newConsulData := newMockConsulData()
 	mnc, newNomadData := newMockNomadData()
-	testProxy, err := newProxy(net.IPv4(127, 0, 0, 1),
+	testAgent, err := newAgent(net.IPv4(127, 0, 0, 1),
 		noopNewProxySocket,
 		newConsulData,
 		newNomadData,
@@ -200,8 +200,8 @@ func TestProxyDockerAndConsulEvents(te *testing.T) {
 	)
 	t.PanicOnErr(err)
 
-	fd := testProxy.docker.(*fakeDocker)
-	fipt := testProxy.ipt.(*fakeIPTables)
+	fd := testAgent.docker.(*fakeDocker)
+	fipt := testAgent.ipt.(*fakeIPTables)
 
 	containerIPAddress := "1.2.3.4"
 	dockerID := "foo"
@@ -211,7 +211,7 @@ func TestProxyDockerAndConsulEvents(te *testing.T) {
 		// create one consul service and send the event
 		name, tags, css := newServiceData("thing", "foo.bar", "tcp", 1)
 		mcc.pushUpdate(name, tags, css)
-		t.Assert().Equal(testProxy.Tick(), TickConsul)
+		t.Assert().Equal(testAgent.Tick(), TickConsul)
 	}
 	{
 		alloc := mockAllocation("job-name", []mockTask{{
@@ -222,7 +222,7 @@ func TestProxyDockerAndConsulEvents(te *testing.T) {
 		taskID.name = "thang"
 
 		mnc.setAllocations([]*nomad.Allocation{alloc})
-		t.Assert().Equal(testProxy.Tick(), TickNomad)
+		t.Assert().Equal(testAgent.Tick(), TickNomad)
 	}
 	{
 		// send the event for that docker container starting
@@ -242,9 +242,9 @@ func TestProxyDockerAndConsulEvents(te *testing.T) {
 				ID: dockerID,
 			},
 		}
-		t.Assert().Equal(testProxy.Tick(), TickDocker)
+		t.Assert().Equal(testAgent.Tick(), TickDocker)
 
-		pr, ok := testProxy.rules[taskID.toProxyKey(address)]
+		pr, ok := testAgent.rules[taskID.toProxyKey(address)]
 		t.Assert().True(ok)
 		t.Assert().Equal(containerIPAddress, pr.containerIP)
 		_, ok = fipt.rules[pr]
@@ -262,31 +262,31 @@ func TestProxyDockerAndConsulEvents(te *testing.T) {
 				ID: dockerID,
 			},
 		}
-		testProxy.Tick()
-		_, ok := testProxy.rules[taskID.toProxyKey(address)]
+		testAgent.Tick()
+		_, ok := testAgent.rules[taskID.toProxyKey(address)]
 		t.Assert().False(ok)
 	}
 	{
 		// delete service, ensure all state is deleted
 		mcc.deleteService("thing")
-		testProxy.Tick()
-		t.Assert().Len(testProxy.services, 0)
-		t.Assert().Len(testProxy.proxies, 0)
-		t.Assert().Len(testProxy.containers, 0)
-		t.Assert().Len(testProxy.rules, 0)
+		testAgent.Tick()
+		t.Assert().Len(testAgent.services, 0)
+		t.Assert().Len(testAgent.proxies, 0)
+		t.Assert().Len(testAgent.containers, 0)
+		t.Assert().Len(testAgent.rules, 0)
 	}
 	{
 		mnc.setAllocations([]*nomad.Allocation{})
-		testProxy.Tick()
-		t.Assert().Len(testProxy.connectRequests, 0)
+		testAgent.Tick()
+		t.Assert().Len(testAgent.connectRequests, 0)
 	}
 }
 
-func TestProxyDockerAndConsulEventsOutOfOrder(te *testing.T) {
+func TestAgentDockerAndConsulEventsOutOfOrder(te *testing.T) {
 	logrus.SetReportCaller(true)
 	t := tester.New(te)
 
-	proxy := NewTestProxy()
+	proxy := NewTestAgent()
 
 	fd := proxy.docker.(*fakeDocker)
 
@@ -368,7 +368,7 @@ func TestProxyDockerAndConsulEventsOutOfOrder(te *testing.T) {
 
 func TestNomadServicesWithSiblings(te *testing.T) {
 	t := tester.New(te)
-	tp := NewTestProxy()
+	tp := NewTestAgent()
 	testData := tp.createTestData(map[string][]mockTask{
 		"standalone2": {{
 			name: "counter",
@@ -409,6 +409,4 @@ func TestNomadServicesWithSiblings(te *testing.T) {
 		allocID: testData.alloc.ID,
 		name:    "dashboard",
 	}])
-
-	t.Assert().Len(tp.siblingRules, 2)
 }
