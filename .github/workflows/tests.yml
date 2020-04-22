@@ -1,0 +1,23 @@
+name: tests
+on: push
+env:
+  GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+jobs:
+  tests:
+    container:
+      image: maxmcd/host-build-image:latest
+      volumes:
+        - /home/runner/work/host:/host
+        - /var/run/docker.sock:/var/run/docker.sock
+        - /lib/modules:/lib/modules
+      options: --cap-add NET_ADMIN
+    runs-on: ubuntu-latest
+    env:
+      FOO: bar
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2.1.0
+      - name: Go test
+        run: |
+          # skip iptables tests
+          go test -race $(go list ./... | grep -v iptables)

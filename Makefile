@@ -70,3 +70,7 @@ tmux_cli_run: nomad_down
 
 generate:
 	cd pkg/pb && go generate
+
+
+build_image_push:
+	cd dockerfiles && make build_image_push
