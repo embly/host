@@ -72,8 +72,7 @@ func (t *Task) Name() string {
 }
 
 func (t *Task) Address() string {
-	// return net.JoinHostPort(t.address, strconv.Itoa(t.port))
-	return net.JoinHostPort("172.17.0.1", strconv.Itoa(t.port))
+	return net.JoinHostPort(t.address, strconv.Itoa(t.port))
 }
 
 type ConsulData struct {
@@ -167,7 +166,7 @@ func (c *ConsulData) getService(name string, tags []string) (service Service) {
 	}
 	for _, s := range services {
 		task := Task{
-			address:   s.Address,
+			address:   s.ServiceAddress,
 			port:      s.ServicePort,
 			node:      s.Node,
 			serviceID: s.ServiceID,

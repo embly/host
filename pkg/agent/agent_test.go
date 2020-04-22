@@ -9,7 +9,6 @@ import (
 	consul "github.com/hashicorp/consul/api"
 	nomad "github.com/hashicorp/nomad/api"
 	"github.com/maxmcd/tester"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/exp/rand"
 )
 
@@ -210,7 +209,6 @@ func TestAgentBasic(te *testing.T) {
 }
 
 func TestAgentDockerAndConsulEvents(te *testing.T) {
-	logrus.SetReportCaller(true)
 	t := tester.New(te)
 	mcc, newConsulData := newMockConsulData()
 	mnc, newNomadData := newMockNomadData()
@@ -306,7 +304,6 @@ func TestAgentDockerAndConsulEvents(te *testing.T) {
 }
 
 func TestAgentDockerAndConsulEventsOutOfOrder(te *testing.T) {
-	logrus.SetReportCaller(true)
 	t := tester.New(te)
 
 	proxy := NewTestAgent()

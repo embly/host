@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 
-	"github.com/maxmcd/tester"
 	"github.com/miekg/dns"
 	"github.com/sirupsen/logrus"
 )
@@ -31,6 +31,13 @@ func (a *Agent) getContainerFromAddr(addr string) *Container {
 	return nil
 }
 
+func (a *Agent) addARecord(m *dns.Msg, host, ipaddr string) {
+	rr, err := dns.NewRR(fmt.Sprintf("%s A %s", host, ipaddr))
+	if err == nil {
+		m.Answer = append(m.Answer, rr)
+	}
+}
+
 func (a *Agent) findDNSResponse(m *dns.Msg, addr net.Addr) bool {
 	var addrString string
 	if a, ok := addr.(*net.UDPAddr); ok {
@@ -46,15 +53,13 @@ func (a *Agent) findDNSResponse(m *dns.Msg, addr net.Addr) bool {
 	if cont == nil {
 		return false
 	}
-	tester.Print(cont)
 
 	for _, q := range m.Question {
 		// poor way to check if this is just looking for a top level domain
 		// proxy domain can just resolve to the same ip (unless there is a port conflict)
 		if strings.Index(q.Name, ".") < len(q.Name)-1 {
-			rr, err := dns.NewRR(fmt.Sprintf("%s A %s", q.Name, a.ip.String()))
-			if err == nil {
-				m.Answer = append(m.Answer, rr)
+			if a.dnsIndex.lookupHost(q.Name) {
+				a.addARecord(m, q.Name, a.ip.String())
 			}
 		} else {
 			for name := range a.allocations[cont.TaskID.allocID].TaskResources {
@@ -64,10 +69,7 @@ func (a *Agent) findDNSResponse(m *dns.Msg, addr net.Addr) bool {
 						name:    name,
 					}]
 					if ok {
-						rr, err := dns.NewRR(fmt.Sprintf("%s A %s", q.Name, otherCont.IPAddress))
-						if err == nil {
-							m.Answer = append(m.Answer, rr)
-						}
+						a.addARecord(m, q.Name, otherCont.IPAddress)
 						break
 					}
 				}
@@ -93,5 +95,39 @@ func (a *Agent) handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 
 	if err = w.WriteMsg(m); err != nil {
 		logrus.Error(err)
+	}
+}
+
+// TODO track ip addrs here
+type DNSIndex struct {
+	hostnames map[string]int
+	lock      sync.RWMutex
+}
+
+func newDNSIndex() *DNSIndex {
+	return &DNSIndex{
+		hostnames: map[string]int{},
+	}
+}
+
+func (idx *DNSIndex) lookupHost(host string) bool {
+	idx.lock.RLock()
+	defer idx.lock.RUnlock()
+	_, ok := idx.hostnames[strings.TrimRight(host, ".")]
+	return ok
+}
+
+func (idx *DNSIndex) addService(s Service) {
+	idx.lock.Lock()
+	defer idx.lock.Unlock()
+	idx.hostnames[s.hostname]++
+}
+
+func (idx *DNSIndex) removeService(s Service) {
+	idx.lock.Lock()
+	defer idx.lock.Unlock()
+	idx.hostnames[s.hostname]--
+	if idx.hostnames[s.hostname] == 0 {
+		delete(idx.hostnames, s.hostname)
 	}
 }

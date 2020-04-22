@@ -10,7 +10,6 @@ import (
 	"github.com/embly/host/pkg/exec"
 	docker "github.com/fsouza/go-dockerclient"
 	nomad "github.com/hashicorp/nomad/api"
-	"github.com/maxmcd/tester"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -31,8 +30,13 @@ type Agent struct {
 	ipt            IPTables
 	newProxySocket func(string, net.IP, int) (ProxySocket, error)
 
-	// services stores services, keyed by the hostname the service is addressed by
+	// services stores services, keyed by the hostname+port the service is addressed by
+	// like: counter.counter:9001
 	services map[string]*Service
+
+	// hostnames with live services, used for dns lookups
+	// TODO: solve the duplicate port on ip address problem by tracking ips here
+	dnsIndex *DNSIndex
 
 	// connectRequests stores all global requests to connect to another service
 	connectRequests map[TaskID]ConnectRequest
@@ -138,6 +142,8 @@ func (a *Agent) initFields() {
 	a.dockerListener = make(chan *docker.APIEvents, 2)
 	a.consulUpdates = make(chan map[string]Service, 2)
 	a.nomadUpdates = make(chan []*nomad.Allocation, 2)
+
+	a.dnsIndex = newDNSIndex()
 
 	a.services = map[string]*Service{}
 	a.connectRequests = map[TaskID]ConnectRequest{}
@@ -291,7 +297,6 @@ func (a *Agent) bootstrapDockerData() (err error) {
 			TaskID:      taskID,
 		}
 		for _, net := range cont.Networks.Networks {
-			tester.Print(net)
 			c.IPAddress = net.IPAddress
 		}
 		a.containers[taskID] = c
@@ -393,6 +398,7 @@ func (a *Agent) processConsulUpdate(services map[string]Service) {
 			}
 			go proxySocket.ProxyLoop(&svc)
 			a.services[key] = &svc
+			a.dnsIndex.addService(svc)
 			a.proxies[key] = proxySocket
 
 			// TODO: less dumb than this?
@@ -416,9 +422,11 @@ func (a *Agent) processConsulUpdate(services map[string]Service) {
 	for key := range a.services {
 		if _, ok := services[key]; !ok {
 			// marking it as dead will stop new requests
-			// drop the proxy from the map and it will eventually exit
+			// drop the proxy from the map after closing it
+			// and it will eventually exit
 			a.services[key].alive = false
 			a.proxies[key].Close()
+			a.dnsIndex.removeService(*a.services[key])
 			delete(a.services, key)
 			delete(a.proxies, key)
 		}

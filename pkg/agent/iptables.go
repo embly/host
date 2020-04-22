@@ -136,8 +136,6 @@ func (ipt *defaultIPTables) CleanUpPreroutingRules() (err error) {
 			return
 		}
 	}
-
-	// tester.Print(ipt.ipt.Stats("nat", "PREROUTING"))
 	return nil
 }
 

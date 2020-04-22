@@ -25,6 +25,7 @@ func newCatalogServiceData(name string, count int, tags []string) (string, []str
 			Node:    "f0ca171f3b88",
 			Address: "127.0.0.1",
 			// this is not how consul creates the serviceID, but we just need them to be unique per CatalogService
+			// TODO: change 8080 to an actual overrideable port value
 			ServiceID:      fmt.Sprintf("_nomad-task-%s-dashboard-%s-%d", id, name, 8080),
 			ServiceName:    name,
 			ServiceAddress: "127.0.0.1",
