@@ -30,6 +30,17 @@ func (fd *fakeDocker) InspectContainerWithOptions(opts docker.InspectContainerOp
 	return nil, nil
 }
 
+func (fd *fakeDocker) ListContainers(opts docker.ListContainersOptions) (out []docker.APIContainers, err error) {
+	for _, cont := range fd.containers {
+		out = append(out, docker.APIContainers{
+			ID:    cont.ID,
+			Image: cont.Image,
+			// TODO: what do we need for testing?
+		})
+	}
+	return
+}
+
 func newFakeDocker() (Docker, error) {
 	return &fakeDocker{containers: map[string]docker.Container{}, listener: make(chan *docker.APIEvents)}, nil
 }

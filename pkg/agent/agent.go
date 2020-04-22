@@ -10,6 +10,7 @@ import (
 	"github.com/embly/host/pkg/exec"
 	docker "github.com/fsouza/go-dockerclient"
 	nomad "github.com/hashicorp/nomad/api"
+	"github.com/maxmcd/tester"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -129,6 +130,9 @@ func newAgent(ip net.IP,
 	if err = a.StartDeployServer(); err != nil {
 		return
 	}
+	if err = a.bootstrapDockerData(); err != nil {
+		return
+	}
 	go a.cd.Updates(a.consulUpdates)
 	go a.nd.Updates(a.nomadUpdates)
 	return
@@ -150,7 +154,7 @@ func (a *Agent) initFields() {
 func (a *Agent) Start() {
 	logrus.Info("agent started")
 	go func() {
-		log.Fatal(StartDNS())
+		log.Fatal(a.StartDNS())
 	}()
 	for {
 		a.Tick()
@@ -177,7 +181,7 @@ func (a *Agent) Tick() int {
 	}
 }
 
-var NomadAllocKey = "com.hashicora.nomad.alloc_id"
+var NomadAllocKey = "com.hashicorp.nomad.alloc_id"
 
 func (a *Agent) setUpProxyRule(ct ConnectRequest) (err error) {
 	cont, haveContainer := a.containers[ct.taskID]
@@ -201,6 +205,7 @@ func (a *Agent) setUpProxyRule(ct ConnectRequest) (err error) {
 }
 
 func taskIDFromString(id string) (taskID TaskID) {
+	id = strings.TrimPrefix(id, "/")
 	parts := strings.SplitN(id, "-", 2)
 	if len(parts) < 2 {
 		return
@@ -266,6 +271,33 @@ func (a *Agent) processDockerStart(taskID TaskID, event *docker.APIEvents) (err 
 			}
 		}
 	}
+	return
+}
+
+func (a *Agent) bootstrapDockerData() (err error) {
+	conts, err := a.docker.ListContainers(docker.ListContainersOptions{})
+	if err != nil {
+		return
+	}
+	for _, cont := range conts {
+		if _, ok := cont.Labels[NomadAllocKey]; !ok {
+			continue
+		}
+		if len(cont.Names) == 0 {
+			continue
+		}
+		taskID := taskIDFromString(cont.Names[0])
+		c := Container{
+			ContainerID: cont.ID,
+			TaskID:      taskID,
+		}
+		for _, net := range cont.Networks.Networks {
+			tester.Print(net)
+			c.IPAddress = net.IPAddress
+		}
+		a.containers[taskID] = c
+	}
+
 	return
 }
 
