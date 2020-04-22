@@ -126,10 +126,6 @@ func newAgent(ip net.IP,
 		return
 	}
 	_ = a.ipt.CleanUpPreroutingRules()
-
-	if err = a.StartDeployServer(); err != nil {
-		return
-	}
 	if err = a.bootstrapDockerData(); err != nil {
 		return
 	}
@@ -153,6 +149,9 @@ func (a *Agent) initFields() {
 
 func (a *Agent) Start() {
 	logrus.Info("agent started")
+	if err := a.StartDeployServer(); err != nil {
+		log.Fatal(err)
+	}
 	go func() {
 		log.Fatal(a.StartDNS())
 	}()

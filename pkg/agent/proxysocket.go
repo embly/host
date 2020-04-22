@@ -83,6 +83,7 @@ func TryConnectEndpoints(service *Service, srcAddr net.Addr, protocol string) (o
 		logrus.Infof("Mapped service %s to endpoint %v", service.hostname, task)
 		// TODO: This could spin up a new goroutine to make the outbound connection,
 		// and keep accepting inbound traffic.
+		// outConn, err := net.DialTimeout(protocol, task.Address(), dialTimeout)
 		outConn, err := net.DialTimeout(protocol, task.Address(), dialTimeout)
 		if err != nil {
 			if isTooManyFDsError(err) {

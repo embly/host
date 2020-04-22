@@ -72,7 +72,8 @@ func (t *Task) Name() string {
 }
 
 func (t *Task) Address() string {
-	return net.JoinHostPort(t.address, strconv.Itoa(t.port))
+	// return net.JoinHostPort(t.address, strconv.Itoa(t.port))
+	return net.JoinHostPort("172.17.0.1", strconv.Itoa(t.port))
 }
 
 type ConsulData struct {

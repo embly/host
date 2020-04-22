@@ -37,6 +37,14 @@ func newMockNomadData() (mnc *mockNomadClient, newConsulData func() (*NomadData,
 	return
 }
 
+func (mnc *mockNomadClient) appendAllocations(allocations []*nomad.Allocation) {
+	mnc.cond.L.Lock()
+	defer mnc.cond.L.Unlock()
+	mnc.allocations = append(mnc.allocations, allocations...)
+	mnc.index++
+	mnc.cond.Signal()
+}
+
 func (mnc *mockNomadClient) setAllocations(allocations []*nomad.Allocation) {
 	mnc.cond.L.Lock()
 	defer mnc.cond.L.Unlock()

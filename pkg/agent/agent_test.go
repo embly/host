@@ -95,6 +95,29 @@ func (tp *TestAgent) createTestData(info map[string][]mockTask) map[string]jobTe
 	return out
 }
 
+func (tp *TestAgent) loadAllTestData(t *tester.Tester, dataMap map[string]jobTestData) {
+	fd := tp.docker.(*fakeDocker)
+	for jobName, data := range dataMap {
+		_ = jobName
+		tp.mnc.appendAllocations([]*nomad.Allocation{data.alloc})
+		t.Assert().Equal(tp.Tick(), TickNomad)
+		t.Assert().NotEmpty(tp.allocations[data.alloc.ID])
+		for taskName := range data.containers {
+			cont := data.containers[taskName]
+			fd.containers[cont.ID] = cont
+			fd.listener <- data.startEvents[taskName]
+			t.Assert().Equal(tp.Tick(), TickDocker)
+			t.Assert().NotEmpty(tp.containers[TaskID{
+				allocID: data.alloc.ID,
+				name:    taskName,
+			}])
+			catalogService := data.catalogService[taskName]
+			tp.mcc.pushUpdate(catalogService.ServiceName, catalogService.ServiceTags, []*consul.CatalogService{catalogService})
+			t.Assert().Equal(tp.Tick(), TickConsul)
+		}
+	}
+}
+
 func TestFakeData(te *testing.T) {
 	t := tester.New(te)
 	_ = t
