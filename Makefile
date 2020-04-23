@@ -1,6 +1,5 @@
 
 
-
 nomad_down:
 	cd nomad && docker-compose kill
 	cd nomad && docker-compose down
@@ -11,7 +10,7 @@ nomad_build:
 	cd nomad && docker build -t nomad_nomad:latest -f nomad.Dockerfile .
 
 nomad_run:
-	make -j nomad_down nomad_build agent_build
+	make -j nomad_down nomad_build agent_docker_build
 	cd nomad && docker-compose up
 
 nomad_exec:
@@ -24,29 +23,13 @@ nomad_job_run:
 test:
 	go test -v -count=1 -cover ./...
 
-docker_scratch_run:
-	cd pkg/docker-scratch/ \
-		&& go run .
-
-hello_exec:
-	docker exec -it $$(docker ps --filter ancestor=maxmcd/hello:latest -q) bash
-
-hello_run: hello_build
-	docker run --cap-add=NET_ADMIN -p 8080:8080 maxmcd/hello:latest
-
-hello_build:
-	cd cmd/hello && docker build -t maxmcd/hello:latest .
-
-hello_push: hello_build
-	docker push maxmcd/hello:latest
-
-agent_build:
-	cd cmd/agent && docker build -f ./Dockerfile -t embly-host-agent:latest ../../
+agent_docker_build:
+	cd cmd/cli && docker build -f ./Dockerfile -t embly-host-cli:latest ../../
 
 agent_logs:
 	cd nomad && docker-compose logs -f agent
 
-agent_rebuild_and_restart: agent_build
+agent_rebuild_and_restart: agent_docker_build
 	cd nomad && docker-compose kill agent && docker-compose up -d agent
 	make agent_logs
 
@@ -55,7 +38,7 @@ genapi_ast:
 	docker run -it embly-host-ast
 
 cli_run:
-	cd cmd/cli && go run . ../../nomad/counter.star
+	cd cmd/cli && go run . deploy ../../nomad/counter.star
 
 dns_run:
 	cd cmd/dns && go run .

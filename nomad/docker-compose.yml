@@ -34,7 +34,7 @@ services:
   agent:
     restart: always
     network_mode: host
-    image: embly-host-agent:latest
+    image: embly-host-cli:latest
     depends_on:
       - nomad
       - consul
