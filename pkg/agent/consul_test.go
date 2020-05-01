@@ -5,8 +5,8 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/google/uuid"
 	consul "github.com/hashicorp/consul/api"
-	"github.com/hashicorp/go-uuid"
 	"github.com/maxmcd/tester"
 )
 
@@ -16,25 +16,16 @@ func randomPort() int {
 	return rand.Intn(max-min) + min
 }
 
-func newConnectToData(name string, count int, connectTo string) (string, []string, []*consul.CatalogService) {
-	tags := []string{
-		fmt.Sprintf("connect_to=%s", connectTo),
-	}
-	return newCatalogServiceData(name, count, tags)
-}
-
 func newCatalogServiceData(name string, count int, tags []string) (string, []string, []*consul.CatalogService) {
 	var css []*consul.CatalogService
 	for i := 0; i < count; i++ {
-		id, err := uuid.GenerateUUID()
-		if err != nil {
-			panic(err)
-		}
+		id := uuid.New().String()
 		css = append(css, &consul.CatalogService{
 			ID:      id,
 			Node:    "f0ca171f3b88",
 			Address: "127.0.0.1",
 			// this is not how consul creates the serviceID, but we just need them to be unique per CatalogService
+			// TODO: change 8080 to an actual overrideable port value
 			ServiceID:      fmt.Sprintf("_nomad-task-%s-dashboard-%s-%d", id, name, 8080),
 			ServiceName:    name,
 			ServiceAddress: "127.0.0.1",
@@ -57,11 +48,11 @@ func newServiceData(name string, hostname string, protocol string, count int) (s
 	return newCatalogServiceData(name, count, tags)
 }
 
-func newFakeConsulData() (fcc *fakeConsulClient, newConsulData func() (ConsulData, error)) {
-	fcc = newFakeConsulClient()
-	newConsulData = func() (cd ConsulData, err error) {
-		cd = &defaultConsulData{
-			cc: fcc,
+func newMockConsulData() (mcc *mockConsulClient, newConsulData func() (*ConsulData, error)) {
+	mcc = newFakeConsulClient()
+	newConsulData = func() (cd *ConsulData, err error) {
+		cd = &ConsulData{
+			cc: mcc,
 		}
 		return cd, err
 	}
@@ -73,18 +64,18 @@ func TestFakeClient(te *testing.T) {
 
 	_, _ = NewConsulData()
 
-	fcc, newConsulData := newFakeConsulData()
+	mcc, newConsulData := newMockConsulData()
 	cd, err := newConsulData()
 	t.PanicOnErr(err)
 
-	fcc.services = map[string][]string{
-		"44959340f59d497f95b667902990da5f": []string{"dns_name=dashboard.standalone2:9002", "protocol=tcp"},
-		"55e96970a0329e7827c97a64dbafa564": []string{"dns_name=counter.counter:9001", "protocol=tcp"},
-		"cbd014d6d6d0eb94588577eb8cd6aad4": []string{"dns_name=dashboard.dashboard:9002", "protocol=tcp"},
-		"consul":                           []string{},
+	mcc.services = map[string][]string{
+		"44959340f59d497f95b667902990da5f": {"dns_name=dashboard.standalone2:9002", "protocol=tcp"},
+		"55e96970a0329e7827c97a64dbafa564": {"dns_name=counter.counter:9001", "protocol=tcp"},
+		"cbd014d6d6d0eb94588577eb8cd6aad4": {"dns_name=dashboard.dashboard:9002", "protocol=tcp"},
+		"consul":                           {},
 	}
-	fcc.catalogService = map[string][]*consul.CatalogService{
-		"44959340f59d497f95b667902990da5f": []*consul.CatalogService{{
+	mcc.catalogService = map[string][]*consul.CatalogService{
+		"44959340f59d497f95b667902990da5f": {{
 			ID:             "12523ec0-4997-4ea7-e776-a8bd6d222461",
 			Node:           "f0ca171f3b88",
 			Address:        "127.0.0.1",
@@ -94,7 +85,7 @@ func TestFakeClient(te *testing.T) {
 			ServiceTags:    []string{"dns_name=dashboard.standalone2:9002", "protocol=tcp"},
 			ServicePort:    27729,
 		}},
-		"cbd014d6d6d0eb94588577eb8cd6aad4": []*consul.CatalogService{{
+		"cbd014d6d6d0eb94588577eb8cd6aad4": {{
 			ID:             "12523ec0-4997-4ea7-e776-a8bd6d222461",
 			Node:           "f0ca171f3b88",
 			Address:        "127.0.0.1",
@@ -105,7 +96,7 @@ func TestFakeClient(te *testing.T) {
 			ServicePort:    24011,
 		}},
 
-		"55e96970a0329e7827c97a64dbafa564": []*consul.CatalogService{{
+		"55e96970a0329e7827c97a64dbafa564": {{
 			ID:             "12523ec0-4997-4ea7-e776-a8bd6d222461",
 			Node:           "f0ca171f3b88",
 			Address:        "127.0.0.1",
@@ -117,12 +108,12 @@ func TestFakeClient(te *testing.T) {
 		}},
 	}
 
-	updatesChan := make(chan ConsulInventory)
+	updatesChan := make(chan map[string]Service)
 	go cd.Updates(updatesChan)
 
 	{
-		inventory := <-updatesChan
-		service := inventory.services["counter.counter:9001"]
+		services := <-updatesChan
+		service := services["counter.counter:9001"]
 		t.Assert().Equal("counter.counter", service.hostname)
 		t.Assert().Equal(9001, service.port)
 		t.Assert().Equal("tcp", service.protocol)
@@ -138,7 +129,7 @@ func TestFakeClient(te *testing.T) {
 		}
 	}
 
-	fcc.pushUpdate("e6306c743ec9d877118629405705a77c",
+	mcc.pushUpdate("e6306c743ec9d877118629405705a77c",
 		[]string{"dns_name=counter.standalone2:9001", "protocol=tcp"},
 		[]*consul.CatalogService{{
 			ID:             "12523ec0-4997-4ea7-e776-a8bd6d222461",
@@ -151,8 +142,8 @@ func TestFakeClient(te *testing.T) {
 			ServicePort:    30590,
 		}})
 	{
-		inventory := <-updatesChan
-		service := inventory.services["counter.standalone2:9001"]
+		services := <-updatesChan
+		service := services["counter.standalone2:9001"]
 		t.Assert().Equal("counter.standalone2", service.hostname)
 		t.Assert().Equal(9001, service.port)
 		for _, task := range service.inventory {

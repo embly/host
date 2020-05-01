@@ -6,7 +6,7 @@ import (
 	consul "github.com/hashicorp/consul/api"
 )
 
-type fakeConsulClient struct {
+type mockConsulClient struct {
 	services       map[string][]string
 	catalogService map[string][]*consul.CatalogService
 
@@ -14,10 +14,10 @@ type fakeConsulClient struct {
 	cond  sync.Cond
 }
 
-var _ ConsulClient = &fakeConsulClient{}
+var _ ConsulClient = &mockConsulClient{}
 
-func newFakeConsulClient() *fakeConsulClient {
-	return &fakeConsulClient{
+func newFakeConsulClient() *mockConsulClient {
+	return &mockConsulClient{
 		services:       map[string][]string{},
 		catalogService: map[string][]*consul.CatalogService{},
 		cond:           sync.Cond{L: &sync.Mutex{}},
@@ -25,40 +25,43 @@ func newFakeConsulClient() *fakeConsulClient {
 	}
 }
 
-func (fcc *fakeConsulClient) pushUpdate(name string, tags []string, css []*consul.CatalogService) {
-	fcc.cond.L.Lock()
-	defer fcc.cond.L.Unlock()
-	fcc.services[name] = tags
-	fcc.catalogService[name] = css
-	fcc.index++
-	fcc.cond.Signal()
+func (mcc *mockConsulClient) pushUpdate(name string, tags []string, css []*consul.CatalogService) {
+	mcc.cond.L.Lock()
+	defer mcc.cond.L.Unlock()
+	mcc.services[name] = tags
+	mcc.catalogService[name] = css
+	mcc.index++
+	mcc.cond.Signal()
 }
 
-func (fcc *fakeConsulClient) deleteService(name string) {
-	fcc.cond.L.Lock()
-	defer fcc.cond.L.Unlock()
-	delete(fcc.services, name)
-	delete(fcc.catalogService, name)
-	fcc.index++
-	fcc.cond.Signal()
+func (mcc *mockConsulClient) deleteService(name string) {
+	mcc.cond.L.Lock()
+	defer mcc.cond.L.Unlock()
+	if _, ok := mcc.services[name]; !ok {
+		panic(name)
+	}
+	delete(mcc.services, name)
+	delete(mcc.catalogService, name)
+	mcc.index++
+	mcc.cond.Signal()
 }
 
-func (fcc *fakeConsulClient) Services(q *consul.QueryOptions) (map[string][]string, *consul.QueryMeta, error) {
-	fcc.cond.L.Lock()
-	defer fcc.cond.L.Unlock()
-	if len(fcc.services) > 0 && fcc.index == 0 {
-		fcc.index = 1
+func (mcc *mockConsulClient) Services(q *consul.QueryOptions) (map[string][]string, *consul.QueryMeta, error) {
+	mcc.cond.L.Lock()
+	defer mcc.cond.L.Unlock()
+	if len(mcc.services) > 0 && mcc.index == 0 {
+		mcc.index = 1
 	}
 	for {
-		if q.WaitIndex < fcc.index && fcc.index != 0 {
-			return fcc.services, &consul.QueryMeta{LastIndex: fcc.index}, nil
+		if q.WaitIndex < mcc.index && mcc.index != 0 {
+			return mcc.services, &consul.QueryMeta{LastIndex: mcc.index}, nil
 		}
-		fcc.cond.Wait()
+		mcc.cond.Wait()
 	}
 }
 
-func (fcc *fakeConsulClient) Service(name, tag string) ([]*consul.CatalogService, error) {
-	fcc.cond.L.Lock()
-	defer fcc.cond.L.Unlock()
-	return fcc.catalogService[name], nil
+func (mcc *mockConsulClient) Service(name, tag string) ([]*consul.CatalogService, error) {
+	mcc.cond.L.Lock()
+	defer mcc.cond.L.Unlock()
+	return mcc.catalogService[name], nil
 }

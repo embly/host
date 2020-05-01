@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"crypto/sha256"
-	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -46,7 +44,6 @@ type File struct {
 }
 
 type Container struct {
-	id          int
 	Name        string
 	Image       string
 	CPU         int
@@ -58,33 +55,9 @@ type Container struct {
 	Environment map[string]string
 }
 
-func (c Container) connectToConsulName(serviceName, containerName, connectTo string) string {
-	hash := sha256.New()
-	_, _ = hash.Write([]byte(serviceName))
-	_, _ = hash.Write([]byte(containerName))
-	_, _ = hash.Write([]byte(connectTo))
-	return fmt.Sprintf("%x", hash.Sum(nil))[:32]
-}
-
 type Port struct {
 	isUDP  bool
 	number int
-}
-
-func (p *Port) protocol() string {
-	if p.isUDP {
-		return "udp"
-	}
-	return "tcp"
-}
-
-func (p Port) consulName(serviceName, containerName string) string {
-	hash := sha256.New()
-	_, _ = hash.Write([]byte(serviceName))
-	_, _ = hash.Write([]byte(containerName))
-	_, _ = hash.Write([]byte(fmt.Sprint(p.number)))
-	_, _ = hash.Write([]byte(fmt.Sprint(p.protocol())))
-	return fmt.Sprintf("%x", hash.Sum(nil))[:32]
 }
 
 type LoadBalancer struct {
@@ -220,9 +193,6 @@ func (file *File) Container(thread *starlark.Thread, fn *starlark.Builtin,
 		err = errors.New("container must have an image")
 		return
 	}
-
-	// for later lookups
-	container.id = len(file.Containers)
 
 	file.Containers = append(file.Containers, container)
 	return &ReflectValue{val: &container}, nil

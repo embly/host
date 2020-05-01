@@ -13,11 +13,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type ConsulInventory struct {
-	services        map[string]Service
-	connectRequests map[string]ConnectTo
-}
-
 // Service defines a collection of tasks that can be routed to. Service will load balance traffic between these tasks
 type Service struct {
 	inventory map[string]Task
@@ -26,17 +21,6 @@ type Service struct {
 	port      int
 	alive     bool
 	protocol  string
-}
-
-type ConnectTo struct {
-	desiredServices []string
-	node            string
-	allocID         string
-	serviceID       string
-}
-
-func (ct *ConnectTo) Name() string {
-	return fmt.Sprintf("%s.%s", ct.node, ct.allocID)
 }
 
 func (s *Service) Name() string {
@@ -91,30 +75,24 @@ func (t *Task) Address() string {
 	return net.JoinHostPort(t.address, strconv.Itoa(t.port))
 }
 
-type ConsulData interface {
-	Updates(chan ConsulInventory)
-}
-
-var _ ConsulData = &defaultConsulData{}
-
-type defaultConsulData struct {
+type ConsulData struct {
 	cc              ConsulClient
 	serviceParallel int
 }
 
-func NewConsulData() (cd ConsulData, err error) {
+func NewConsulData() (cd *ConsulData, err error) {
 	cc, err := NewConsulClient(consul.DefaultConfig())
 	if err != nil {
 		return
 	}
-	cd = &defaultConsulData{
+	cd = &ConsulData{
 		cc:              cc,
 		serviceParallel: 3,
 	}
 	return
 }
 
-func (c *defaultConsulData) Updates(ch chan ConsulInventory) {
+func (c *ConsulData) Updates(ch chan map[string]Service) {
 	var lastIndex uint64
 	var q *consul.QueryOptions
 	for {
@@ -128,7 +106,7 @@ func (c *defaultConsulData) Updates(ch chan ConsulInventory) {
 		}
 		serviceTags = filterServices(serviceTags)
 		lastIndex = meta.LastIndex
-		ch <- c.getInventory(serviceTags)
+		ch <- c.getServices(serviceTags)
 	}
 }
 
@@ -168,7 +146,7 @@ func parseAllocIDFromServiceID(in string) (out string) {
 	return matches[0][1]
 }
 
-func (c *defaultConsulData) getService(name string, tags []string) (service Service) {
+func (c *ConsulData) getService(name string, tags []string) (service Service) {
 	service.alive = true
 	service.lock = &sync.RWMutex{}
 
@@ -188,47 +166,13 @@ func (c *defaultConsulData) getService(name string, tags []string) (service Serv
 	}
 	for _, s := range services {
 		task := Task{
-			address:   s.Address,
+			address:   s.ServiceAddress,
 			port:      s.ServicePort,
 			node:      s.Node,
 			serviceID: s.ServiceID,
 			allocID:   parseAllocIDFromServiceID(s.ServiceID),
 		}
 		service.inventory[task.Name()] = task
-	}
-	return
-}
-
-func parseConnectToTag(tags []string) []string {
-	for _, tag := range tags {
-		if strings.Contains(tag, "connect_to") {
-			parts := strings.Split(tag, "=")
-			if len(parts) < 2 {
-				continue
-			}
-			return strings.Split(parts[1], ",")
-		}
-	}
-	return nil
-}
-
-func (c *defaultConsulData) getConnectTo(name string, tags []string) (ct []ConnectTo) {
-	services, err := c.cc.Service(name, "")
-	if err != nil {
-		logrus.Error(err)
-		return
-	}
-	for _, s := range services {
-		hostnames := parseConnectToTag(tags)
-		if len(hostnames) == 0 {
-			continue
-		}
-		ct = append(ct, ConnectTo{
-			serviceID:       s.ServiceID,
-			node:            s.Node,
-			allocID:         parseAllocIDFromServiceID(s.ServiceID),
-			desiredServices: hostnames,
-		})
 	}
 	return
 }
@@ -251,20 +195,8 @@ func filterServices(serviceNames map[string][]string) map[string][]string {
 	return out
 }
 
-func isService(tags []string) bool {
-	for _, tag := range tags {
-		if strings.Contains(tag, "dns_name") {
-			return true
-		}
-	}
-	return false
-}
-
-func (c *defaultConsulData) getInventory(serviceTags map[string][]string) (inventory ConsulInventory) {
-	inventory = ConsulInventory{
-		services:        map[string]Service{},
-		connectRequests: map[string]ConnectTo{},
-	}
+func (c *ConsulData) getServices(serviceTags map[string][]string) (services map[string]Service) {
+	services = map[string]Service{}
 
 	n := c.serviceParallel
 	if n <= 0 {
@@ -274,30 +206,19 @@ func (c *defaultConsulData) getInventory(serviceTags map[string][]string) (inven
 	sem := make(chan int, n)
 
 	cfgs := make(chan Service, len(serviceTags))
-	connects := make(chan []ConnectTo, len(serviceTags))
 	for name, tags := range serviceTags {
 		tags, name := tags, name
 		go func() {
 			sem <- 1
-			if isService(tags) {
-				cfgs <- c.getService(name, tags)
-			} else {
-				connects <- c.getConnectTo(name, tags)
-			}
+			cfgs <- c.getService(name, tags)
 			<-sem
 		}()
 	}
 
 	for i := 0; i < len(serviceTags); i++ {
-		select {
-		case svc := <-cfgs:
-			if svc.hostname != "" {
-				inventory.services[svc.Name()] = svc
-			}
-		case cts := <-connects:
-			for _, ct := range cts {
-				inventory.connectRequests[ct.Name()] = ct
-			}
+		svc := <-cfgs
+		if svc.hostname != "" {
+			services[svc.Name()] = svc
 		}
 	}
 	return

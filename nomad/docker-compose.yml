@@ -3,13 +3,15 @@ version: "3.5"
 services:
   consul:
     image: nixery.dev/shell/consul
-    command: consul agent -dev -client 0.0.0.0
-    ports:
-      - "8500:8500"
+    network_mode: host
+    command: consul agent -dev -client 127.0.0.1
+    # ports:
+    #   - "8500:8500"
   nomad:
     cap_add:
       - SYS_ADMIN
       - NET_ADMIN
+    network_mode: host
     build:
       dockerfile: nomad.Dockerfile
       context: .
@@ -19,14 +21,23 @@ services:
       - /tmp/nomad/data:/tmp/nomad/data
     depends_on:
       - consul
+    # ports:
+    #   - "4647:4647"
+    #   - "4648:4648"
+    #   - "4646:4646"
+  dns:
+    image: debian
+    command: sleep 10000
+    depends_on:
       - agent
-    ports:
-      - "4647:4647"
-      - "4648:4648"
-      - "4646:4646"
+
   agent:
+    restart: always
     network_mode: host
-    image: embly-host-agent:latest
+    image: embly-host-cli:latest
+    depends_on:
+      - nomad
+      - consul
     cap_add:
       - NET_ADMIN
     volumes:

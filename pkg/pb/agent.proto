@@ -1,0 +1,32 @@
+syntax = "proto3";
+package pb;
+option go_package = "pb";
+
+message Service {
+  string name = 1;
+  int32 count = 2;
+  map<string, Container> containers = 3;
+}
+
+message Container {
+  string name = 1;
+  string image = 2;
+  int32 cpu = 3;
+  int32 memory = 4;
+  string command = 5;
+  repeated Port ports = 6;
+  repeated string connect_to = 7;
+  map<string, string> environment = 8;
+}
+
+message Port {
+  bool isUDP = 1;
+  int32 number = 2;
+}
+
+message DeployMeta {
+  bytes stdout = 1;
+  bytes stderr = 2;
+}
+
+service DeployService { rpc Deploy(Service) returns (stream DeployMeta); }
