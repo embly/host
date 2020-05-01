@@ -20,4 +20,4 @@ jobs:
       - name: Go test
         run: |
           # skip iptables tests
-          go test -race $(go list ./... | grep -v iptables)
+          go test $(go list ./... | grep -v iptables)
