@@ -38,7 +38,7 @@ genapi_ast:
 	docker run -it embly-host-ast
 
 cli_run:
-	cd cmd/cli && go run . deploy ../../nomad/counter.star
+	cd cmd/embly && go run . deploy ../../nomad/counter.star
 
 dns_run:
 	cd cmd/dns && go run .

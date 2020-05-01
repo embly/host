@@ -55,7 +55,7 @@ Logs:
 Databases:
  - oof
  - foundation db all the way?
- - gvisor is going to make this hard, redis/postgres performance would be meh
+ - gvisor is going to make this harder, redis/postgres performance would be meh
  - vpc peering is hard for this, can we do vpc peering with a shared host? maybe proxy through a t4.micro or something...
 
 https:
