@@ -37,8 +37,16 @@ genapi_ast:
 	cd python && docker build -t embly-host-ast .
 	docker run -it embly-host-ast
 
+CLI_RUN = cd cmd/embly && go run -ldflags "-X main.version=`git rev-parse HEAD`" .
+DEPLOY_ARG = run ../../nomad/counter.star
+cli_run_deploy:
+	$(CLI_RUN) $(DEPLOY_ARG)
+
 cli_run:
-	cd cmd/embly && go run . deploy ../../nomad/counter.star
+	$(CLI_RUN) $(ARG)
+
+cli_install:
+	cd cmd/embly && go install -ldflags "-X main.version=`git rev-parse HEAD`"
 
 dns_run:
 	cd cmd/dns && go run .

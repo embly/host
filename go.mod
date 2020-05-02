@@ -21,6 +21,7 @@ require (
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/maxmcd/tester v0.0.0-20200315004439-02c29039e2ff
 	github.com/miekg/dns v1.1.29
+	github.com/mitchellh/cli v1.0.0
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.5.0
 	go.starlark.net v0.0.0-20200306205701-8dd3e2ee1dd5
