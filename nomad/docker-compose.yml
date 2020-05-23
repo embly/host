@@ -25,11 +25,6 @@ services:
     #   - "4647:4647"
     #   - "4648:4648"
     #   - "4646:4646"
-  dns:
-    image: debian
-    command: sleep 10000
-    depends_on:
-      - agent
 
   agent:
     restart: always

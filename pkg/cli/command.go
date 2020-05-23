@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"context"
 	"log"
 	"net"
 	"os"
 
 	"github.com/embly/host/pkg/agent"
+	"github.com/fatih/color"
 	"github.com/mitchellh/cli"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -51,21 +53,21 @@ func (c *Command) Run(args []string) int {
 }
 
 func RunCommand(version string) {
-	c := cli.NewCLI("embly", version)
+	c := cli.NewCLI("twelve", version)
 	c.Args = os.Args[1:]
 	c.Commands = map[string]cli.CommandFactory{
-		"start": func() (cli.Command, error) {
+		"launch": func() (cli.Command, error) {
 			return &Command{
 				help:     "hi",
-				synopsis: "Starts embly services for local dev",
-				run:      func(a []string) error { return nil },
+				synopsis: "Launches services for local dev",
+				run:      RunStart,
 			}, nil
 		},
 		"stop": func() (cli.Command, error) {
 			return &Command{
 				help:     "hi",
-				synopsis: "Stops embly services",
-				run:      func(a []string) error { return nil },
+				synopsis: "Stops services for local development",
+				run:      RunStop,
 			}, nil
 		},
 		"run": func() (cli.Command, error) {
@@ -90,7 +92,8 @@ func RunCommand(version string) {
 			}, nil
 		},
 	}
-
+	// TODO
+	// c.HelpFunc = func(in map[string]cli.CommandFactory) string {}
 	exitStatus, err := c.Run()
 	if err != nil {
 		log.Println(err)
@@ -111,7 +114,7 @@ func RunAgent(args []string) error {
 
 func RunRun(args []string) error {
 	if len(args) < 1 {
-		return errors.New("This command takes one argument: <path>")
+		return errors.New("this command takes one argument: <path>")
 	}
 	file, err := RunFile(args[0])
 	if err != nil {
@@ -119,13 +122,40 @@ func RunRun(args []string) error {
 	}
 	client, err := NewAPIClient()
 	if err != nil {
+		return errors.Wrap(err, "error creating new client")
+	}
+	healthy, err := client.Healthy()
+	if !healthy {
+		color.New(color.FgRed, color.Bold).Print("\nCouldn't connect to the local embly client. Is it running? Run with \"embly start\"\n\n")
 		return err
 	}
-
+	resp, err := client.grpcClient.Health(context.Background(), nil)
+	if err != nil {
+		return errors.Wrap(err, "error fetching client health")
+	}
+	_ = resp
 	for _, service := range file.Services {
 		if err = client.DeployService(service); err != nil {
 			log.Println(err)
 		}
 	}
 	return nil
+}
+
+func RunStart(args []string) error {
+	client, err := NewAPIClient()
+	if err != nil {
+		return errors.Wrap(err, "error creating new client")
+	}
+
+	return client.StartLocalServices()
+}
+
+func RunStop(args []string) error {
+	client, err := NewAPIClient()
+	if err != nil {
+		return errors.Wrap(err, "error creating new client")
+	}
+
+	return client.StopLocalServices()
 }

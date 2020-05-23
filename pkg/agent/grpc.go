@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strings"
@@ -141,7 +142,7 @@ func DeployIsh(job *nomad.Job, srv pb.DeployService_DeployServer) (err error) {
 }
 
 func (a *Agent) Deploy(req *pb.Service, srv pb.DeployService_DeployServer) error {
-	logrus.Info("got new service deployment", req)
+	logrus.Infof("new DeployService.Deploy(%v)", req)
 	job := ServiceToJob(*req)
 	err := DeployIsh(job, srv)
 	if err != nil {
@@ -150,4 +151,12 @@ func (a *Agent) Deploy(req *pb.Service, srv pb.DeployService_DeployServer) error
 		})
 	}
 	return err
+}
+
+func (a *Agent) Health(ctx context.Context, req *pb.HealthRequest) (resp *pb.HealthResponse, err error) {
+	logrus.Infof("new DeployService.Health(%v)", req)
+	return &pb.HealthResponse{
+		Code: 0,
+		Msg:  "ok",
+	}, nil
 }

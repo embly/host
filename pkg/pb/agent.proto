@@ -29,4 +29,13 @@ message DeployMeta {
   bytes stderr = 2;
 }
 
-service DeployService { rpc Deploy(Service) returns (stream DeployMeta); }
+message HealthRequest {}
+message HealthResponse {
+  int32 code = 1;
+  string msg = 2;
+}
+
+service DeployService {
+  rpc Deploy(Service) returns (stream DeployMeta);
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
