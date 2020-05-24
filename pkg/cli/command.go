@@ -73,7 +73,7 @@ func RunCommand(version string) {
 		"run": func() (cli.Command, error) {
 			return &Command{
 				help:     "hi",
-				synopsis: "Runs a service",
+				synopsis: "Runs a service locally",
 				run:      RunRun,
 			}, nil
 		},

@@ -23,14 +23,42 @@ func (a *Agent) StartDeployServer() (err error) {
 		return
 	}
 	a.grpcServer = grpc.NewServer()
-	pb.RegisterDeployServiceServer(a.grpcServer, a)
+	pb.RegisterDeployServiceServer(a.grpcServer, &DeployServiceServer{})
 	go func() {
 		panic(a.grpcServer.Serve(lis))
 	}()
 	return nil
 }
 
-var _ pb.DeployServiceServer = &Agent{}
+type DeployServiceServer struct {
+	nomadClient *nomad.Client
+}
+
+var _ pb.DeployServiceServer = &DeployServiceServer{}
+
+func (server *DeployServiceServer) Deploy(req *pb.DeployRequest, srv pb.DeployService_DeployServer) (err error) {
+	logrus.Infof("new DeployService.Deploy(%v)", req)
+
+	for _, service := range req.Services {
+		job := ServiceToJob(*service)
+		err := DeployIsh(job, srv)
+		if err != nil {
+			_ = srv.Send(&pb.DeployResponse{Meta: &pb.DeployMeta{
+				Stderr: []byte(fmt.Sprintf("%+v\n", err)),
+			}})
+			return err
+		}
+	}
+	return
+}
+
+func (server *DeployServiceServer) Health(ctx context.Context, req *pb.HealthRequest) (resp *pb.HealthResponse, err error) {
+	logrus.Infof("new DeployService.Health(%v)", req)
+	return &pb.HealthResponse{
+		Code: 0,
+		Msg:  "ok",
+	}, nil
+}
 
 func ServiceToJob(service pb.Service) (job *nomad.Job) {
 	job = nomad.NewServiceJob(service.Name, service.Name, "dc1", 1)
@@ -98,9 +126,9 @@ func ServiceToJob(service pb.Service) (job *nomad.Job) {
 
 func DeployIsh(job *nomad.Job, srv pb.DeployService_DeployServer) (err error) {
 	print := func(v ...interface{}) {
-		_ = srv.Send(&pb.DeployMeta{
+		_ = srv.Send(&pb.DeployResponse{Meta: &pb.DeployMeta{
 			Stdout: []byte(fmt.Sprintln(v...)),
-		})
+		}})
 	}
 
 	client, err := nomad.NewClient(&nomad.Config{
@@ -139,24 +167,4 @@ func DeployIsh(job *nomad.Job, srv pb.DeployService_DeployServer) (err error) {
 		}
 	}
 	return nil
-}
-
-func (a *Agent) Deploy(req *pb.Service, srv pb.DeployService_DeployServer) error {
-	logrus.Infof("new DeployService.Deploy(%v)", req)
-	job := ServiceToJob(*req)
-	err := DeployIsh(job, srv)
-	if err != nil {
-		_ = srv.Send(&pb.DeployMeta{
-			Stderr: []byte(fmt.Sprintf("%+v\n", err)),
-		})
-	}
-	return err
-}
-
-func (a *Agent) Health(ctx context.Context, req *pb.HealthRequest) (resp *pb.HealthResponse, err error) {
-	logrus.Infof("new DeployService.Health(%v)", req)
-	return &pb.HealthResponse{
-		Code: 0,
-		Msg:  "ok",
-	}, nil
 }

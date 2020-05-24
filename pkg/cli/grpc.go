@@ -75,24 +75,28 @@ func (ac *APIClient) DeployService(service Service) (err error) {
 		}
 	}
 
-	deployClient, err := ac.grpcClient.Deploy(context.Background(), &pbService)
+	deployClient, err := ac.grpcClient.Deploy(context.Background(), &pb.DeployRequest{
+		Services: []*pb.Service{&pbService}})
 	if err != nil {
 		return
 	}
 	for {
-		var deployMeta *pb.DeployMeta
-		deployMeta, err = deployClient.Recv()
+		var deployResponse *pb.DeployResponse
+		deployResponse, err = deployClient.Recv()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
 			return
 		}
-		if len(deployMeta.Stderr) > 0 {
-			_, _ = os.Stderr.Write(deployMeta.Stderr)
-		}
-		if len(deployMeta.Stdout) > 0 {
-			_, _ = os.Stdout.Write(deployMeta.Stdout)
+		if deployResponse.Meta != nil {
+			deployMeta := deployResponse.Meta
+			if len(deployMeta.Stderr) > 0 {
+				_, _ = os.Stderr.Write(deployMeta.Stderr)
+			}
+			if len(deployMeta.Stdout) > 0 {
+				_, _ = os.Stdout.Write(deployMeta.Stdout)
+			}
 		}
 	}
 	return nil

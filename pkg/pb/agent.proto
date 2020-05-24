@@ -35,7 +35,14 @@ message HealthResponse {
   string msg = 2;
 }
 
+message DeployRequest {
+  repeated Service services = 1;
+}
+message DeployResponse{
+  DeployMeta meta = 1;
+}
+
 service DeployService {
-  rpc Deploy(Service) returns (stream DeployMeta);
+  rpc Deploy(DeployRequest) returns (stream DeployResponse);
   rpc Health(HealthRequest) returns (HealthResponse);
 }
