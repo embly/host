@@ -4,10 +4,14 @@ nomad_down:
 	cd nomad && docker-compose kill
 	cd nomad && docker-compose down
 
+consul_build:
+	docker pull nixery.dev/shell/consul
+	docker tag nixery.dev/shell/consul embly/consul
+
 nomad_build:
 	cd $$GOPATH/src/github.com/hashicorp/nomad/ \
 		&& docker build -f ./Dockerfile -t nomad-embly .
-	cd nomad && docker build -t nomad_nomad:latest -f nomad.Dockerfile .
+	cd nomad && docker build -t embly/nomad:latest -f nomad.Dockerfile .
 
 nomad_run:
 	make -j nomad_down nomad_build agent_docker_build
@@ -24,7 +28,7 @@ test:
 	go test -v -count=1 -cover ./...
 
 agent_docker_build:
-	cd cmd/cli && docker build -f ./Dockerfile -t embly-host-cli:latest ../../
+	cd cmd/twelve && docker build -f ./Dockerfile -t embly/twelve:latest ../../
 
 agent_logs:
 	cd nomad && docker-compose logs -f agent
@@ -37,8 +41,16 @@ genapi_ast:
 	cd python && docker build -t embly-host-ast .
 	docker run -it embly-host-ast
 
+CLI_RUN = cd cmd/twelve && go run -ldflags "-X main.version=`git rev-parse HEAD`" .
+DEPLOY_ARG = run ../../nomad/counter.star
+cli_run_deploy:
+	$(CLI_RUN) $(DEPLOY_ARG)
+
 cli_run:
-	cd cmd/embly && go run . deploy ../../nomad/counter.star
+	$(CLI_RUN) $(ARG)
+
+cli_install:
+	cd cmd/twelve && go install -ldflags "-X main.version=`git rev-parse HEAD`"
 
 dns_run:
 	cd cmd/dns && go run .

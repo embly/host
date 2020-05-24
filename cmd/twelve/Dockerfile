@@ -11,9 +11,9 @@ COPY pkg ./pkg
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    cd cmd/cli && go build
+    cd cmd/twelve && go build && strip twelve
 
 FROM alpine:3.11
 RUN apk add bash curl iptables
-COPY --from=0 /opt/cmd/cli/cli /bin/cli
-CMD ["/bin/cli","agent"]
+COPY --from=0 /opt/cmd/twelve/twelve /bin/twelve
+CMD ["/bin/twelve","agent"]

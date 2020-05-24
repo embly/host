@@ -9,15 +9,17 @@ import (
 
 	"github.com/embly/host/pkg/agent"
 	"github.com/embly/host/pkg/pb"
+	docker "github.com/fsouza/go-dockerclient"
+	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 )
 
 type APIClient struct {
-	// grpc client
-	client pb.DeployServiceClient
+	grpcClient   pb.DeployServiceClient
+	dockerClient *docker.Client
 }
 
-func NewAPIClient() (*APIClient, error) {
+func NewAPIClient() (c *APIClient, err error) {
 	conn, err := grpc.Dial(
 		"127.0.0.1:"+strconv.Itoa(agent.DefaultGRPCPort),
 		grpc.WithInsecure(),
@@ -27,10 +29,27 @@ func NewAPIClient() (*APIClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := APIClient{}
-	c.client = pb.NewDeployServiceClient(conn)
-	return &c, nil
+	c = &APIClient{}
+	c.grpcClient = pb.NewDeployServiceClient(conn)
+	return c, nil
 }
+
+func (ac *APIClient) connectDocker() (err error) {
+	ac.dockerClient, err = docker.NewClientFromEnv()
+	return
+}
+
+func (ac *APIClient) Healthy() (ok bool, err error) {
+	resp, err := ac.grpcClient.Health(context.Background(), nil)
+	if err != nil {
+		return false, errors.Wrap(err, "error fetching embly client health")
+	}
+	if resp.Code != 0 {
+		return false, errors.New(resp.Msg)
+	}
+	return true, nil
+}
+
 func (ac *APIClient) DeployService(service Service) (err error) {
 	pbService := pb.Service{
 		Name:       service.Name,
@@ -56,24 +75,28 @@ func (ac *APIClient) DeployService(service Service) (err error) {
 		}
 	}
 
-	deployClient, err := ac.client.Deploy(context.Background(), &pbService)
+	deployClient, err := ac.grpcClient.Deploy(context.Background(), &pb.DeployRequest{
+		Services: []*pb.Service{&pbService}})
 	if err != nil {
 		return
 	}
 	for {
-		var deployMeta *pb.DeployMeta
-		deployMeta, err = deployClient.Recv()
+		var deployResponse *pb.DeployResponse
+		deployResponse, err = deployClient.Recv()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
 			return
 		}
-		if len(deployMeta.Stderr) > 0 {
-			_, _ = os.Stderr.Write(deployMeta.Stderr)
-		}
-		if len(deployMeta.Stdout) > 0 {
-			_, _ = os.Stdout.Write(deployMeta.Stdout)
+		if deployResponse.Meta != nil {
+			deployMeta := deployResponse.Meta
+			if len(deployMeta.Stderr) > 0 {
+				_, _ = os.Stderr.Write(deployMeta.Stderr)
+			}
+			if len(deployMeta.Stdout) > 0 {
+				_, _ = os.Stdout.Write(deployMeta.Stdout)
+			}
 		}
 	}
 	return nil

@@ -4,7 +4,9 @@ go 1.13
 
 require (
 	github.com/armon/go-metrics v0.0.0-20190430140413-ec5e00d3c878 // indirect
+	github.com/fatih/color v1.9.0
 	github.com/fsouza/go-dockerclient v1.6.3
+	github.com/go-acme/lego/v3 v3.6.0
 	github.com/gogo/protobuf v1.2.2-0.20190723190241-65acae22fc9d // indirect
 	github.com/golang/protobuf v1.4.0
 	github.com/google/uuid v1.1.1
@@ -21,11 +23,12 @@ require (
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/maxmcd/tester v0.0.0-20200315004439-02c29039e2ff
 	github.com/miekg/dns v1.1.29
+	github.com/mitchellh/cli v1.0.0
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.5.0
 	go.starlark.net v0.0.0-20200306205701-8dd3e2ee1dd5
 	golang.org/x/crypto v0.0.0-20200302210943-78000ba7a073 // indirect
-	golang.org/x/exp v0.0.0-20200207192155-f17229e696bd
+	golang.org/x/exp v0.0.0-20200224162631-6cc2880d07d6
 	golang.org/x/net v0.0.0-20200301022130-244492dfa37a // indirect
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e // indirect
 	golang.org/x/sys v0.0.0-20200302150141-5c8b2ff67527 // indirect
